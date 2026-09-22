@@ -1006,7 +1006,7 @@ if not master_df.empty:
         dist_matrix, dur_matrix = build_road_distance_matrix_cached(coords)
         
         # ----------------- HORIZONTAL ALIGNED AUTO-OPTIMIZER BAR -----------------
-        st.markdown("### ⚡ Route Direction & Optimization")[cite: 1]
+        st.markdown("### ⚡ Route Direction & Optimization")
         
         stop_options = ["-- Auto-Pick Closest Stop --"] + [
             f"#{i+1}: {r['Inspection ID']} ({str(r['Address'])[:22]}...)" 
@@ -1015,11 +1015,11 @@ if not master_df.empty:
 
         with st.form("optimizer_control_form"):
             c_start, c_end, c_btn = st.columns([4, 4, 3], gap="medium")
-            selected_first_opt = c_start.selectbox("📍 Lock First Stop:", stop_options, index=0)[cite: 1]
-            selected_last_opt = c_end.selectbox("🏁 Lock Last Stop:", stop_options, index=0)[cite: 1]
+            selected_first_opt = c_start.selectbox("📍 Lock First Stop:", stop_options, index=0)
+            selected_last_opt = c_end.selectbox("🏁 Lock Last Stop:", stop_options, index=0)
             
             c_btn.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
-            btn_do_optimize = c_btn.form_submit_button("⚡ Auto-Optimize Route", type="primary", width='stretch')[cite: 1]
+            btn_do_optimize = c_btn.form_submit_button("⚡ Auto-Optimize Route", type="primary", width='stretch')
 
             if btn_do_optimize:
                 first_row_id = None
@@ -1072,8 +1072,8 @@ if not master_df.empty:
             col_list, col_map = st.columns([1, 2], gap="small")
             
             with col_list:
-                st.markdown(f"### 📋 Manage Stops ({len(valid_master_df)} Active)")[cite: 1]
-                st.caption("Check boxes to drop stops, then click remove:")[cite: 1]
+                st.markdown(f"### 📋 Manage Stops ({len(valid_master_df)} Active)")
+                st.caption("Check boxes to drop stops, then click remove:")
 
                 table_rows = []
                 for i, r in valid_master_df.iterrows():
@@ -1114,7 +1114,7 @@ if not master_df.empty:
                             st.info("Check at least one stop box before clicking remove.")
 
             with col_map:
-                st.markdown("### 🗺️ Live Route Map")[cite: 1]
+                st.markdown("### 🗺️ Live Route Map")
                 if os.path.exists("route_map.html"):
                     with open("route_map.html", "r", encoding="utf-8") as f:
                         html_data = f.read()
@@ -1123,8 +1123,8 @@ if not master_df.empty:
             # ----------------- ITINERARY TABLE & NAV LINK -----------------
             st.markdown("---")
             route_name_str = f"Driver 1 - {datetime.now().strftime('%Y-%m-%d')}"
-            st.markdown(f"## View Route Itinerary - Driver 1")[cite: 1]
-            st.caption(f"**Route Name:** `{route_name_str}` | **Planned Date:** {datetime.now().strftime('%m/%d/%Y')}")[cite: 1]
+            st.markdown(f"## View Route Itinerary - Driver 1")
+            st.caption(f"**Route Name:** `{route_name_str}` | **Planned Date:** {datetime.now().strftime('%m/%d/%Y')}")
 
             sched_df_display = sched_df.copy()
             sched_df_display['Navigate'] = sched_df_display.apply(
@@ -1255,18 +1255,18 @@ if not master_df.empty:
         })
 
         st.sidebar.markdown("---")
-        st.sidebar.markdown("### 📋 Driver 1 Summary")[cite: 1]
-        st.sidebar.metric("Route Start", sched_df.iloc[0]['Arrival'])[cite: 1]
-        st.sidebar.metric("Route Finish", sched_df.iloc[-1]['Arrival'])[cite: 1]
-        st.sidebar.metric("Total Mileage", f"{sched_df.iloc[-1]['Total Miles']} mi")[cite: 1]
-        st.sidebar.metric("Total Stops", f"{len(sched_df) - 2} stops")[cite: 1]
+        st.sidebar.markdown("### 📋 Driver 1 Summary")
+        st.sidebar.metric("Route Start", sched_df.iloc[0]['Arrival'])
+        st.sidebar.metric("Route Finish", sched_df.iloc[-1]['Arrival'])
+        st.sidebar.metric("Total Mileage", f"{sched_df.iloc[-1]['Total Miles']} mi")
+        st.sidebar.metric("Total Stops", f"{len(sched_df) - 2} stops")
 
-        with st.sidebar.expander("🔢 Move Individual Stop Position", expanded=False):[cite: 1]
-            stop_choices = [f"Stop #{i+1}: {r['Inspection ID']} ({r['Address'][:18]}...)" for i, r in valid_master_df.iterrows()][cite: 1]
-            selected_stop_to_move = st.selectbox("Select Stop to Move:", range(len(stop_choices)), format_func=lambda x: stop_choices[x])[cite: 1]
-            target_new_position = st.number_input("Move to Stop #:", min_value=1, max_value=len(valid_master_df), value=selected_stop_to_move + 1)[cite: 1]
+        with st.sidebar.expander("🔢 Move Individual Stop Position", expanded=False):
+            stop_choices = [f"Stop #{i+1}: {r['Inspection ID']} ({r['Address'][:18]}...)" for i, r in valid_master_df.iterrows()]
+            selected_stop_to_move = st.selectbox("Select Stop to Move:", range(len(stop_choices)), format_func=lambda x: stop_choices[x])
+            target_new_position = st.number_input("Move to Stop #:", min_value=1, max_value=len(valid_master_df), value=selected_stop_to_move + 1)
             
-            if st.button("🚀 Move to Position", width='stretch'):[cite: 1]
+            if st.button("🚀 Move to Position", width='stretch'):
                 current_idx = selected_stop_to_move
                 new_idx = target_new_position - 1
                 if current_idx != new_idx:
@@ -1276,26 +1276,26 @@ if not master_df.empty:
                     part_after = df_without_row.iloc[new_idx:]
                     valid_master_df = pd.concat([part_before, row_to_move, part_after]).reset_index(drop=True)
                     persist_stops(valid_master_df)
-                    st.toast(f"Moved stop to #{target_new_position}!", icon="🔢")[cite: 1]
+                    st.toast(f"Moved stop to #{target_new_position}!", icon="🔢")
                     st.rerun()
 
         st.sidebar.markdown("---")
-        st.sidebar.markdown("### 💾 Name & Save This Route")[cite: 1]
-        default_name = f"Route_{datetime.now().strftime('%Y%m%d_%H%M')}"[cite: 1]
-        custom_route_name = st.sidebar.text_input("Name Your Route File:", value=default_name, key="input_custom_name")[cite: 1]
+        st.sidebar.markdown("### 💾 Name & Save This Route")
+        default_name = f"Route_{datetime.now().strftime('%Y%m%d_%H%M')}"
+        custom_route_name = st.sidebar.text_input("Name Your Route File:", value=default_name, key="input_custom_name")
         
-        if st.sidebar.button("💾 Save Route to Folder", key="btn_save_route"):[cite: 1]
-            clean_name = "".join(c for c in custom_route_name if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')[cite: 1]
+        if st.sidebar.button("💾 Save Route to Folder", key="btn_save_route"):
+            clean_name = "".join(c for c in custom_route_name if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')
             if not clean_name:
-                clean_name = default_name[cite: 1]
-            saved_filename = f"{clean_name}.csv"[cite: 1]
-            saved_full_path = os.path.join(SAVED_DIR, saved_filename)[cite: 1]
-            sched_df_export.to_csv(saved_full_path, index=False)[cite: 1]
-            st.sidebar.success(f"✅ Route saved successfully as: `{saved_filename}`!")[cite: 1]
-            st.toast(f"Saved {saved_filename} to folder!", icon="💾")[cite: 1]
+                clean_name = default_name
+            saved_filename = f"{clean_name}.csv"
+            saved_full_path = os.path.join(SAVED_DIR, saved_filename)
+            sched_df_export.to_csv(saved_full_path, index=False)
+            st.sidebar.success(f"✅ Route saved successfully as: `{saved_filename}`!")
+            st.toast(f"Saved {saved_filename} to folder!", icon="💾")
 
         st.sidebar.markdown("---")
-        st.sidebar.markdown("### 📥 Export Files")[cite: 1]
+        st.sidebar.markdown("### 📥 Export Files")
 
         mobile_html = export_mobile_dispatch_html(sched_df, custom_route_name, start_time, stop_duration)
         st.sidebar.download_button(
@@ -1305,28 +1305,28 @@ if not master_df.empty:
             mime="text/html"
         )
 
-        csv_data = sched_df_export.to_csv(index=False).encode('utf-8')[cite: 1]
+        csv_data = sched_df_export.to_csv(index=False).encode('utf-8')
         st.sidebar.download_button(
-            label="📊 Download Stops in a CSV file",[cite: 1]
-            data=csv_data,[cite: 1]
-            file_name=f"{custom_route_name}.csv",[cite: 1]
-            mime="text/csv"[cite: 1]
+            label="📊 Download Stops in a CSV file",
+            data=csv_data,
+            file_name=f"{custom_route_name}.csv",
+            mime="text/csv"
         )
 
-        wpt_gpx = export_waypoints_gpx(sched_df)[cite: 1]
+        wpt_gpx = export_waypoints_gpx(sched_df)
         st.sidebar.download_button(
-            label="💾 Download as GPX XML",[cite: 1]
-            data=wpt_gpx,[cite: 1]
-            file_name=f"{custom_route_name}.gpx",[cite: 1]
-            mime="application/gpx+xml"[cite: 1]
+            label="💾 Download as GPX XML",
+            data=wpt_gpx,
+            file_name=f"{custom_route_name}.gpx",
+            mime="application/gpx+xml"
         )
 
-        txt_data = export_directions_txt(sched_df)[cite: 1]
+        txt_data = export_directions_txt(sched_df)
         st.sidebar.download_button(
-            label="📄 Download directions in a text file",[cite: 1]
-            data=txt_data,[cite: 1]
-            file_name=f"{custom_route_name}_directions.txt",[cite: 1]
-            mime="text/plain"[cite: 1]
+            label="📄 Download directions in a text file",
+            data=txt_data,
+            file_name=f"{custom_route_name}_directions.txt",
+            mime="text/plain"
         )
 else:
-    st.info("Upload export files or type an address into the search box on the left sidebar to begin.")[cite: 1]
+    st.info("Upload export files or type an address into the search box on the left sidebar to begin.")
