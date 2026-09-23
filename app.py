@@ -1196,8 +1196,7 @@ if not master_df.empty:
             st.markdown("---")
            
 # --- LIVE DYNAMIC DASHBOARD & RIPPLE ---
-    from zoneinfo import ZoneInfo
-    now_live = datetime.now(ZoneInfo("America/New_York"))
+    now_live = datetime.utcnow() - timedelta(hours=4)
     if "route_start_time" not in st.session_state: st.session_state.route_start_time = None
     if "completed_stops" not in st.session_state: st.session_state.completed_stops = set()
 
@@ -1224,7 +1223,7 @@ if not master_df.empty:
     col_sync1, col_sync2 = st.columns(2)
     with col_sync1:
         if st.button("🚀 Start / Sync Route (Now)", use_container_width=True):
-            st.session_state.route_start_time = datetime.now(ZoneInfo("America/New_York"))
+            st.session_state.route_start_time = datetime.utcnow() - timedelta(hours=4)
             st.rerun()
     with col_sync2:
         if st.button("🔄 Reset Progress", use_container_width=True):
