@@ -1194,24 +1194,24 @@ if not master_df.empty:
             c_mb2.metric("🚗 Total Route", f"{final_row['Total Miles']:.1f} mi")
             c_mb3.metric("🏁 Office ETA", f"{final_row['Arrival']}")
             st.markdown("---")
-    # --- LIVE FLOATING TRACKER & ACTION HUB ---
-    target_df = sched_df if "sched_df" in locals() and sched_df is not None else None
+            # --- LIVE FLOATING TRACKER & ACTION HUB ---
+            target_df = sched_df if "sched_df" in locals() and sched_df is not None else None
 
-    if target_df is not None:
-        now_live = datetime.utcnow() - timedelta(hours=4)
-        if "route_start_time" not in st.session_state:
-            st.session_state.route_start_time = None
-        if "completed_stops" not in st.session_state:
-            st.session_state.completed_stops = set()
+            if target_df is not None:
+                  now_live = datetime.utcnow() - timedelta(hours=4)
+                  if "route_start_time" not in st.session_state:
+                      st.session_state.route_start_time = None
+                  if "completed_stops" not in st.session_state:
+                      st.session_state.completed_stops = set()
 
-        completed_cnt = len(st.session_state.completed_stops)
-        total_stops = len(target_df)
-        rem_cnt = max(0, total_stops - completed_cnt)
+                  completed_cnt = len(st.session_state.completed_stops)
+                  total_stops = len(target_df)
+                  rem_cnt = max(0, total_stops - completed_cnt)
 
-        proj_finish = now_live + timedelta(minutes=rem_cnt * 10)
-        finish_str = proj_finish.strftime("%I:%M %p").lstrip("0")
+                  proj_finish = now_live + timedelta(minutes=rem_cnt * 10)
+                  finish_str = proj_finish.strftime("%I:%M %p").lstrip("0")
 
-        st.markdown(
+                  st.markdown(
             f"""
             <div style="position: sticky; top: 0; z-index: 999; background: #111827; color: white; padding: 12px 16px; border-radius: 8px; margin-bottom: 15px; border-left: 5px solid #2563eb;">
                 <div style="display: flex; justify-content: space-between; align-items: center; font-size: 1.05rem; font-weight: bold;">
@@ -1236,9 +1236,9 @@ if not master_df.empty:
 
         st.markdown("---")
 
-        # --- SAVE, EXPORTS & INSPECTORADE TOOLS ---
+        # --- SAVE & EXPORT TOOLS ---
         st.subheader("💾 Save Route & Export Data")
-        exp_col1, exp_col2, exp_col3, exp_col4 = st.columns(4)
+        exp_col1, exp_col2, exp_col3 = st.columns(3)
 
         # 1. Save Route
         with exp_col1:
@@ -1270,7 +1270,7 @@ if not master_df.empty:
                 for _, row in target_df.iterrows():
                     lat = row.get("Latitude", row.get("lat", 0.0))
                     lon = row.get("Longitude", row.get("lon", 0.0))
-                    addr = row.get("Address", "Stop")
+                    addr = row.get("Address", row.get("Full Address", "Stop"))
                     gpx_lines.append(f'  <wpt lat="{lat}" lon="{lon}"><name>{addr}</name></wpt>')
                 gpx_lines.append('</gpx>')
                 gpx_string = "\n".join(gpx_lines)
@@ -1284,36 +1284,15 @@ if not master_df.empty:
             except Exception:
                 pass
 
-        # 4. InspectorAde Export Codes
-        with exp_col4:
-            st.write("**InspectorAde Code**")
-            if "Order_Number" in target_df.columns:
-                ade_codes = ",".join(target_df["Order_Number"].astype(str).tolist())
-            elif "Work_Order" in target_df.columns:
-                ade_codes = ",".join(target_df["Work_Order"].astype(str).tolist())
-            else:
-                ade_codes = ",".join(target_df.index.astype(str).tolist())
-            st.code(ade_codes, language="text")
-
         st.markdown("---")
 
-        # --- TURN-BY-TURN DIRECTIONS & MANIFEST ---
-        st.subheader("📋 Driving Turn-by-Turn Manifest")
-        for idx, row in target_df.iterrows():
-            stop_num = idx + 1
-            addr = row.get("Address", "N/A")
-            arr_time = row.get("Arrival", "N/A")
-            tot_mi = row.get("Total Miles", "")
-            chk_key = f"chk_stop_{idx}"
-            is_done = idx in st.session_state.completed_stops
-
-            cols = st.columns([1, 6, 2, 2])
-            if cols[0].checkbox("Done", value=is_done, key=chk_key):
-                st.session_state.completed_stops.add(idx)
+        # --- PRINTABLE CLIPBOARD MANIFEST ---
+        with st.expander("🖨️ Open Printable Clipboard Manifest"):
+            st.button("Print Manifest", on_click=None, help="Use your browser's Print option (Ctrl+P) to print this view.")
+            
+            # Format display table for clean print view
+            display_cols = [c for c in target_df.columns if c in ["Order_Number", "Work_Order", "Address", "Full Address", "Arrival", "Departure", "Total Miles", "Miles", "Duration"]]
+            if display_cols:
+                st.dataframe(target_df[display_cols], use_container_width=True)
             else:
-                st.session_state.completed_stops.discard(idx)
-
-            cols[1].markdown(f"**Stop {stop_num}:** {addr}")
-            cols[2].write(f"⏱️ {arr_time}")
-            if tot_mi:
-                cols[3].write(f"🚗 {tot_mi} mi")
+                st.dataframe(target_df, use_container_width=True)
