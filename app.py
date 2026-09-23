@@ -1244,13 +1244,13 @@ if not master_df.empty:
     
             # 1. Save Route
             with exp_col1:
-                route_save_name = st.text_input("Route Name", value="Saved_Route", key="save_rt_name")
+                route_save_name = st.text_input("Route Name", key="save_rt_name")
                 if st.button("💾 Save Route"):
-                    os.makedirs("saved_routes", exist_ok=True)
-                    save_path = os.path.join("saved_routes", f"{route_save_name}.csv")
-                    target_df.to_csv(save_path, index=False)
-                    st.success("Route saved successfully!")
-    
+                os.makedirs("saved_routes", exist_ok=True)
+                save_path = os.path.join("saved_routes", f"{route_save_name}.csv")
+                target_df.to_csv(save_path, index=False)
+                st.success("Route saved successfully!")
+                st.rerun()
             # 2. CSV Export
             with exp_col2:
                 csv_bytes = target_df.to_csv(index=False).encode("utf-8")
