@@ -1201,6 +1201,7 @@ if not master_df.empty:
     if "completed_stops" not in st.session_state: st.session_state.completed_stops = set()
 
     completed_cnt = len(st.session_state.completed_stops)
+    total_stops = len(final_df) if "final_df" in locals() and final_df is not None else 0
     rem_cnt = max(0, total_stops - completed_cnt)
 
     # 10 mins per remaining stop (5m drive + 5m dwell)
