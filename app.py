@@ -1194,139 +1194,39 @@ if not master_df.empty:
             c_mb2.metric("🚗 Total Route", f"{final_row['Total Miles']:.1f} mi")
             c_mb3.metric("🏁 Office ETA", f"{final_row['Arrival']}")
             st.markdown("---")
+           
+            # --- LIVE DYNAMIC DASHBOARD & RIPPLE ---
+            now_live = datetime.now()
+    if "route_start_time" not in st.session_state: st.session_state.route_start_time = None
+    if "completed_stops" not in st.session_state: st.session_state.completed_stops = set()
 
-            for idx, row in sched_df.iterrows():
-                stop_num = row['Stop Number']
-                insp_id = str(row['Inspection ID']).strip()
-                addr = str(row['Description']).strip()
-                lat = row['Latitude']
-                lon = row['Longitude']
-                arrival = row['Arrival']
-                departure = row['Departure']
-                leg_miles = row['Leg Miles']
-                nav_link = f"https://www.google.com/maps/dir/?api=1&destination={lat},{lon}"
+    completed_cnt = len(st.session_state.completed_stops)
+    rem_cnt = max(0, total_stops - completed_cnt)
+    
+    # 10 mins per remaining stop (5m drive + 5m dwell)
+    proj_finish = now_live + timedelta(minutes=rem_cnt * 10)
+    finish_str = proj_finish.strftime("%I:%M %p")
 
-                is_start_depot = (idx == 0)
-                is_end_depot = (idx == len(sched_df) - 1)
-                is_done = idx in st.session_state['completed_stops']
+    st.markdown(f"""
+    <div style="position: -webkit-sticky; position: sticky; top: 2.8rem; z-index: 999; background: #111827; color: white; border: 2px solid #2563eb; border-radius: 10px; padding: 10px 14px; margin-bottom: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.35);">
+        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 15px; font-weight: bold;">
+            <span>📍 Stop {min(completed_cnt + 1, total_stops)} of {total_stops} ({rem_cnt} left)</span>
+            <span style="background: #2563eb; padding: 3px 8px; border-radius: 5px;">🏁 Finish: ~{finish_str}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 12px; color: #9ca3af; margin-top: 5px;">
+            <span>✅ {completed_cnt} Completed</span>
+            <span>⏱️ Current Time: {now_live.strftime("%I:%M %p")}</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-                if is_start_depot:
-                    header_label = "🏢 DEPOT / OFFICE START"
-                elif is_end_depot:
-                    header_label = "🏁 FINAL RETURN TO BASE"
-                else:
-                    header_label = f"STOP #{stop_num - 1}: {insp_id}"
-
-                with st.container(border=True):
-                    col_t1, col_t2 = st.columns([3, 1])
-                    if is_done:
-                        col_t1.markdown(f"### ~~{header_label}~~")
-                        col_t1.caption(f"~~{addr}~~")
-                    else:
-                        col_t1.markdown(f"### {header_label}")
-                        col_t1.write(f"**{addr}**")
-                    
-                    col_t2.markdown(f"**ETA:** `{arrival}`")
-                    st.caption(f"🚗 Leg: **{leg_miles} mi** | ⏱️ Dwell: **{stop_duration}m** | 🏁 Leave: **{departure}**")
-
-                    c_act1, c_act2 = st.columns([2, 1])
-                    c_act1.link_button("🗺️ Navigate in Maps", nav_link, type="primary", use_container_width=True)
-                    
-                    if not (is_start_depot or is_end_depot):
-                        done_toggle = c_act2.checkbox("Done", value=is_done, key=f"mob_chk_{idx}")
-                        if done_toggle and idx not in st.session_state['completed_stops']:
-                            st.session_state['completed_stops'].add(idx)
-                            st.rerun()
-                        elif not done_toggle and idx in st.session_state['completed_stops']:
-                            st.session_state['completed_stops'].remove(idx)
-                            st.rerun()
-
-        # ----------------- SIDEBAR SUMMARY & EXPORTS -----------------
-        sched_df_export = pd.DataFrame({
-            'Route Name': f"Driver 1 - {datetime.now().strftime('%Y-%m-%d')}",
-            'Stop Number': sched_df['Stop Number'],
-            'Name': sched_df['Inspection ID'].replace('', 'Depot'),
-            'Address': sched_df['Description'],
-            'Arrival': sched_df['Arrival'],
-            'Departure': sched_df['Departure'],
-            'Total Miles': sched_df['Total Miles'],
-            'Latitude': sched_df['Latitude'],
-            'Longitude': sched_df['Longitude']
-        })
-
-        st.sidebar.markdown("---")
-        st.sidebar.markdown("### 📋 Driver 1 Summary")
-        st.sidebar.metric("Route Start", sched_df.iloc[0]['Arrival'])
-        st.sidebar.metric("Route Finish", sched_df.iloc[-1]['Arrival'])
-        st.sidebar.metric("Total Mileage", f"{sched_df.iloc[-1]['Total Miles']} mi")
-        st.sidebar.metric("Total Stops", f"{len(sched_df) - 2} stops")
-
-        with st.sidebar.expander("🔢 Move Individual Stop Position", expanded=False):
-            stop_choices = [f"Stop #{i+1}: {r['Inspection ID']} ({r['Address'][:18]}...)" for i, r in valid_master_df.iterrows()]
-            selected_stop_to_move = st.selectbox("Select Stop to Move:", range(len(stop_choices)), format_func=lambda x: stop_choices[x])
-            target_new_position = st.number_input("Move to Stop #:", min_value=1, max_value=len(valid_master_df), value=selected_stop_to_move + 1)
-            
-            if st.button("🚀 Move to Position", width='stretch'):
-                current_idx = selected_stop_to_move
-                new_idx = target_new_position - 1
-                if current_idx != new_idx:
-                    row_to_move = valid_master_df.iloc[current_idx:current_idx+1]
-                    df_without_row = valid_master_df.drop(index=current_idx)
-                    part_before = df_without_row.iloc[:new_idx]
-                    part_after = df_without_row.iloc[new_idx:]
-                    valid_master_df = pd.concat([part_before, row_to_move, part_after]).reset_index(drop=True)
-                    persist_stops(valid_master_df)
-                    st.toast(f"Moved stop to #{target_new_position}!", icon="🔢")
-                    st.rerun()
-
-        st.sidebar.markdown("---")
-        st.sidebar.markdown("### 💾 Name & Save This Route")
-        default_name = f"Route_{datetime.now().strftime('%Y%m%d_%H%M')}"
-        custom_route_name = st.sidebar.text_input("Name Your Route File:", value=default_name, key="input_custom_name")
-        
-        if st.sidebar.button("💾 Save Route to Folder", key="btn_save_route"):
-            clean_name = "".join(c for c in custom_route_name if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')
-            if not clean_name:
-                clean_name = default_name
-            saved_filename = f"{clean_name}.csv"
-            saved_full_path = os.path.join(SAVED_DIR, saved_filename)
-            sched_df_export.to_csv(saved_full_path, index=False)
-            st.sidebar.success(f"✅ Route saved successfully as: `{saved_filename}`!")
-            st.toast(f"Saved {saved_filename} to folder!", icon="💾")
-
-        st.sidebar.markdown("---")
-        st.sidebar.markdown("### 📥 Export Files")
-
-        mobile_html = export_mobile_dispatch_html(sched_df, custom_route_name, start_time, stop_duration)
-        st.sidebar.download_button(
-            label="📱 Download Mobile App Route (HTML)",
-            data=mobile_html,
-            file_name=f"{custom_route_name}_mobile.html",
-            mime="text/html"
-        )
-
-        csv_data = sched_df_export.to_csv(index=False).encode('utf-8')
-        st.sidebar.download_button(
-            label="📊 Download Stops in a CSV file",
-            data=csv_data,
-            file_name=f"{custom_route_name}.csv",
-            mime="text/csv"
-        )
-
-        wpt_gpx = export_waypoints_gpx(sched_df)
-        st.sidebar.download_button(
-            label="💾 Download as GPX XML",
-            data=wpt_gpx,
-            file_name=f"{custom_route_name}.gpx",
-            mime="application/gpx+xml"
-        )
-
-        txt_data = export_directions_txt(sched_df)
-        st.sidebar.download_button(
-            label="📄 Download directions in a text file",
-            data=txt_data,
-            file_name=f"{custom_route_name}_directions.txt",
-            mime="text/plain"
-        )
-else:
-    st.info("Upload export files or type an address into the search box on the left sidebar to begin.")
+    col_sync1, col_sync2 = st.columns(2)
+    with col_sync1:
+        if st.button("🚀 Start / Sync Route (Now)", use_container_width=True):
+            st.session_state.route_start_time = datetime.now()
+            st.rerun()
+    with col_sync2:
+        if st.button("🔄 Reset Progress", use_container_width=True):
+            st.session_state.completed_stops = set()
+            st.session_state.route_start_time = None
+            st.rerun()
