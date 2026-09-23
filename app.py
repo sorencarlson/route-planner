@@ -1234,81 +1234,81 @@ if not master_df.empty:
                 st.session_state.route_start_time = None
                 st.rerun()
 
-        st.markdown("---")
-
-        # --- SAVE & EXPORT TOOLS ---
-        st.subheader("💾 Save Route & Export Data")
-        exp_col1, exp_col2, exp_col3, exp_col4 = st.columns(4)
-
-        # 1. Save Route
-        with exp_col1:
-            route_save_name = st.text_input("Route Name", value="Saved_Route", key="save_rt_name")
-            if st.button("💾 Save Route"):
-                os.makedirs("saved_routes", exist_ok=True)
-                save_path = os.path.join("saved_routes", f"{route_save_name}.csv")
-                target_df.to_csv(save_path, index=False)
-                st.success("Route saved successfully!")
-
-        # 2. CSV Export
-        with exp_col2:
-            csv_bytes = target_df.to_csv(index=False).encode("utf-8")
-            st.download_button(
-                label="📥 Download CSV",
-                data=csv_bytes,
-                file_name=f"{route_save_name}.csv",
-                mime="text/csv",
-                key="dl_btn_csv",
-            )
-
-        # 3. GPX Download
-        with exp_col3:
-            gpx_lines = [
-                '<?xml version="1.0" encoding="UTF-8"?>',
-                '<gpx version="1.1" creator="RoutePlanner">'
-            ]
-            for _, row in target_df.iterrows():
-                lat = row.get("Latitude") or row.get("lat") or row.get("Lat") or 0.0
-                lon = row.get("Longitude") or row.get("lon") or row.get("Lon") or row.get("Lng") or 0.0
-                addr = row.get("Address") or row.get("Full Address") or row.get("Street") or "Stop"
-                clean_addr = str(addr).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                gpx_lines.append(f'  <wpt lat="{lat}" lon="{lon}"><name>{clean_addr}</name></wpt>')
-            gpx_lines.append('</gpx>')
-            gpx_string = "\n".join(gpx_lines)
-            
-            st.download_button(
-                label="🗺️ Download GPX",
-                data=gpx_string,
-                file_name=f"{route_save_name}.gpx",
-                mime="application/gpx+xml",
-                key="dl_btn_gpx",
-            )
-
-        # 4. InspectorAde File Export
-        with exp_col4:
-            ade_lines = ["OrderNumber,Address,City,State,Zip"]
-            for _, row in target_df.iterrows():
-                order = row.get("Order_Number") or row.get("Work_Order") or row.get("Order") or ""
-                addr = row.get("Address") or row.get("Street") or ""
-                city = row.get("City") or ""
-                state = row.get("State") or ""
-                zip_code = row.get("Zip") or row.get("PostalCode") or ""
-                ade_lines.append(f'"{order}","{addr}","{city}","{state}","{zip_code}"')
-            ade_csv = "\n".join(ade_lines).encode("utf-8")
-            st.download_button(
-                label="📋 InspectorAde",
-                data=ade_csv,
-                file_name=f"{route_save_name}_InspectorAde.csv",
-                mime="text/csv",
-                key="dl_btn_inspectorade",
-            )
-
-        st.markdown("---")
-
-        # --- PRINTABLE CLIPBOARD MANIFEST ---
-        with st.expander("🖨️ Open Printable Clipboard Manifest"):
-            st.button("Print Manifest", on_click=None, help="Use browser Print (Ctrl+P)")
-            display_cols = [c for c in target_df.columns if c in ["Order_Number", "Work_Order", "Address", "Full Address", "Arrival", "Departure", "Total Miles", "Miles", "Duration"]]
-            if display_cols:
-                st.dataframe(target_df[display_cols], use_container_width=True)
-            else:
-                st.dataframe(target_df, use_container_width=True)
+            st.markdown("---")
+    
+            # --- SAVE & EXPORT TOOLS ---
+            st.subheader("💾 Save Route & Export Data")
+            exp_col1, exp_col2, exp_col3, exp_col4 = st.columns(4)
+    
+            # 1. Save Route
+            with exp_col1:
+                route_save_name = st.text_input("Route Name", value="Saved_Route", key="save_rt_name")
+                if st.button("💾 Save Route"):
+                    os.makedirs("saved_routes", exist_ok=True)
+                    save_path = os.path.join("saved_routes", f"{route_save_name}.csv")
+                    target_df.to_csv(save_path, index=False)
+                    st.success("Route saved successfully!")
+    
+            # 2. CSV Export
+            with exp_col2:
+                csv_bytes = target_df.to_csv(index=False).encode("utf-8")
+                st.download_button(
+                    label="📥 Download CSV",
+                    data=csv_bytes,
+                    file_name=f"{route_save_name}.csv",
+                    mime="text/csv",
+                    key="dl_btn_csv",
+                )
+    
+            # 3. GPX Download
+            with exp_col3:
+                gpx_lines = [
+                    '<?xml version="1.0" encoding="UTF-8"?>',
+                    '<gpx version="1.1" creator="RoutePlanner">'
+                ]
+                for _, row in target_df.iterrows():
+                    lat = row.get("Latitude") or row.get("lat") or row.get("Lat") or 0.0
+                    lon = row.get("Longitude") or row.get("lon") or row.get("Lon") or row.get("Lng") or 0.0
+                    addr = row.get("Address") or row.get("Full Address") or row.get("Street") or "Stop"
+                    clean_addr = str(addr).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                    gpx_lines.append(f'  <wpt lat="{lat}" lon="{lon}"><name>{clean_addr}</name></wpt>')
+                gpx_lines.append('</gpx>')
+                gpx_string = "\n".join(gpx_lines)
+                
+                st.download_button(
+                    label="🗺️ Download GPX",
+                    data=gpx_string,
+                    file_name=f"{route_save_name}.gpx",
+                    mime="application/gpx+xml",
+                    key="dl_btn_gpx",
+                )
+    
+            # 4. InspectorAde File Export
+            with exp_col4:
+                ade_lines = ["OrderNumber,Address,City,State,Zip"]
+                for _, row in target_df.iterrows():
+                    order = row.get("Order_Number") or row.get("Work_Order") or row.get("Order") or ""
+                    addr = row.get("Address") or row.get("Street") or ""
+                    city = row.get("City") or ""
+                    state = row.get("State") or ""
+                    zip_code = row.get("Zip") or row.get("PostalCode") or ""
+                    ade_lines.append(f'"{order}","{addr}","{city}","{state}","{zip_code}"')
+                ade_csv = "\n".join(ade_lines).encode("utf-8")
+                st.download_button(
+                    label="📋 InspectorAde",
+                    data=ade_csv,
+                    file_name=f"{route_save_name}_InspectorAde.csv",
+                    mime="text/csv",
+                    key="dl_btn_inspectorade",
+                )
+    
+            st.markdown("---")
+    
+            # --- PRINTABLE CLIPBOARD MANIFEST ---
+            with st.expander("🖨️ Open Printable Clipboard Manifest"):
+                st.button("Print Manifest", on_click=None, help="Use browser Print (Ctrl+P)")
+                display_cols = [c for c in target_df.columns if c in ["Order_Number", "Work_Order", "Address", "Full Address", "Arrival", "Departure", "Total Miles", "Miles", "Duration"]]
+                if display_cols:
+                    st.dataframe(target_df[display_cols], use_container_width=True)
+                else:
+                    st.dataframe(target_df, use_container_width=True)
