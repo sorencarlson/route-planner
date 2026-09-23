@@ -1195,27 +1195,28 @@ if not master_df.empty:
             c_mb3.metric("🏁 Office ETA", f"{final_row['Arrival']}")
             st.markdown("---")
            
-            # --- LIVE DYNAMIC DASHBOARD & RIPPLE ---
-            now_live = datetime.now()
+# --- LIVE DYNAMIC DASHBOARD & RIPPLE ---
+    from zoneinfo import ZoneInfo
+    now_live = datetime.now(ZoneInfo("America/New_York"))
     if "route_start_time" not in st.session_state: st.session_state.route_start_time = None
     if "completed_stops" not in st.session_state: st.session_state.completed_stops = set()
 
     completed_cnt = len(st.session_state.completed_stops)
     rem_cnt = max(0, total_stops - completed_cnt)
-    
+
     # 10 mins per remaining stop (5m drive + 5m dwell)
     proj_finish = now_live + timedelta(minutes=rem_cnt * 10)
-    finish_str = proj_finish.strftime("%I:%M %p")
+    finish_str = proj_finish.strftime("%I:%M %p").lstrip("0")
 
     st.markdown(f"""
     <div style="position: -webkit-sticky; position: sticky; top: 2.8rem; z-index: 999; background: #111827; color: white; border: 2px solid #2563eb; border-radius: 10px; padding: 10px 14px; margin-bottom: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.35);">
-        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 15px; font-weight: bold;">
+        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 14px; font-weight: bold;">
             <span>📍 Stop {min(completed_cnt + 1, total_stops)} of {total_stops} ({rem_cnt} left)</span>
-            <span style="background: #2563eb; padding: 3px 8px; border-radius: 5px;">🏁 Finish: ~{finish_str}</span>
+            <span style="background: #2563eb; padding: 3px 8px; border-radius: 5px; white-space: nowrap;">🏁 ~{finish_str}</span>
         </div>
         <div style="display: flex; justify-content: space-between; font-size: 12px; color: #9ca3af; margin-top: 5px;">
             <span>✅ {completed_cnt} Completed</span>
-            <span>⏱️ Current Time: {now_live.strftime("%I:%M %p")}</span>
+            <span>⏱️ {now_live.strftime("%I:%M %p").lstrip('0')}</span>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -1223,7 +1224,7 @@ if not master_df.empty:
     col_sync1, col_sync2 = st.columns(2)
     with col_sync1:
         if st.button("🚀 Start / Sync Route (Now)", use_container_width=True):
-            st.session_state.route_start_time = datetime.now()
+            st.session_state.route_start_time = datetime.now(ZoneInfo("America/New_York"))
             st.rerun()
     with col_sync2:
         if st.button("🔄 Reset Progress", use_container_width=True):
