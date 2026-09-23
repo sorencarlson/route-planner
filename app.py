@@ -1235,7 +1235,9 @@ if not master_df.empty:
                 st.rerun()
 
             st.markdown("---")
-    
+           target_df = sched_df if "sched_df" in locals() and sched_df is not None else None
+           if target_df is None and "route_df" in locals(): target_df = route_df
+           if target_df is None and "df" in locals(): target_df = df
             # --- SAVE & EXPORT TOOLS ---
             st.subheader("💾 Save Route & Export Data")
             exp_col1, exp_col2, exp_col3, exp_col4 = st.columns(4)
