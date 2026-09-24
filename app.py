@@ -1094,14 +1094,14 @@ if not master_df.empty:
                             "Inspection ID": st.column_config.TextColumn("ID", width="medium"),
                             "Address": st.column_config.TextColumn("Address", width="medium"),
                         },
-                        disabled=["Stop #", "Inspection ID", "Address"],
+                        disabled=["Inspection ID", "Address"],
                         hide_index=True,
                         width='stretch',
                         height=750,
                         key="side_by_side_editor"
                     )
 
-                    submit_prune = st.form_submit_button("🗑️ Remove Selected Stops", type="secondary", width='stretch')
+                    submit_prune = st.form_submit_button("💾 Apply Changes / Remove Selected", type="primary", width='stretch')
                     
                     if submit_prune:
                         to_remove_ids = edited_df[edited_df["Drop?"] == True]["Inspection ID"].tolist()
@@ -1111,7 +1111,9 @@ if not master_df.empty:
                             st.toast(f"Removed {len(to_remove_ids)} inspections!", icon="🗑️")
                             st.rerun()
                         else:
-                            st.info("Check at least one stop box before clicking remove.")
+            sorted_df = edited_df.sort_values(by="Stop #").reset_index(drop=True)
+            persist_stops(sorted_df)
+            st.rerun()
 
             with col_map:
                 st.markdown("### 🗺️ Live Route Map")
