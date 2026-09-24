@@ -1322,10 +1322,10 @@ if not master_df.empty:
         ade_csv = "\n".join(ade_lines).encode("utf-8")
     
             # --- PRINTABLE CLIPBOARD MANIFEST ---
-            with st.expander("🖨️ Open Printable Clipboard Manifest"):
-                st.button("Print Manifest", on_click=None, help="Use browser Print (Ctrl+P)")
-                display_cols = [c for c in target_df.columns if c in ["Order_Number", "Work_Order", "Address", "Full Address", "Arrival", "Departure", "Total Miles", "Miles", "Duration"]]
-                if display_cols:
-                    st.dataframe(target_df[display_cols], use_container_width=True)
-                else:
-                    st.dataframe(target_df, use_container_width=True)
+        with st.expander("🖨️ Open Printable Clipboard Manifest"):
+            st.button("Print Manifest", on_click=None, help="Use browser Print (Ctrl+P)")
+            display_cols = [c for c in target_df.columns if c in ["Order_Number", "Work_Order", "Address", "Full Address", "Arrival", "Departure", "Total Miles", "Miles", "Duration"]]
+            if display_cols:
+                st.dataframe(target_df[display_cols], use_container_width=True)
+            else:
+                st.dataframe(target_df, use_container_width=True)
