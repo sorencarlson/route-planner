@@ -1307,13 +1307,13 @@ if not master_df.empty:
         )
     
             # 4. InspectorAde File Export
-            with exp_col4:
-                ade_lines = ["OrderNumber,Address,City,State,Zip"]
-                for _, row in target_df.iterrows():
-                    order = row.get("Order_Number") or row.get("Work_Order") or row.get("Order") or ""
-                    addr = row.get("Address") or row.get("Street") or ""
-                    city = row.get("City") or ""
-                    state = row.get("State") or ""
+        with exp_col4:
+            ade_lines = ["OrderNumber,Address,City,State,Zip"]
+            for _, row in target_df.iterrows():
+                order = row.get("Order_Number") or row.get("Work_Order") or row.get("Order") or ""
+                addr = row.get("Address") or row.get("Street") or ""
+                city = row.get("City") or ""
+                state = row.get("State") or ""
                     zip_code = row.get("Zip") or row.get("PostalCode") or ""
                     ade_lines.append(f'"{order}","{addr}","{city}","{state}","{zip_code}"')
                 ade_csv = "\n".join(ade_lines).encode("utf-8")
