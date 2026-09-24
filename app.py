@@ -1111,9 +1111,9 @@ if not master_df.empty:
                             st.toast(f"Removed {len(to_remove_ids)} inspections!", icon="🗑️")
                             st.rerun()
                         else:
-            sorted_df = edited_df.sort_values(by="Stop #").reset_index(drop=True)
-            persist_stops(sorted_df)
-            st.rerun()
+                            sorted_df = edited_df.sort_values(by="Stop #").reset_index(drop=True)
+                            persist_stops(sorted_df)
+                            st.rerun()
 
             with col_map:
                 st.markdown("### 🗺️ Live Route Map")
