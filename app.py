@@ -1308,8 +1308,7 @@ if not master_df.empty:
             mime="application/gpx+xml",
             key="dl_btn_gpx",
         )
-
-    # 4. InspectorAde File Export
+# 4. InspectorAde File Export
     with exp_col4:
         ade_lines = ["OrderNumber,Address,City,State,Zip"]
         for _, row in target_df.iterrows():
@@ -1320,12 +1319,14 @@ if not master_df.empty:
             zip_code = row.get("Zip") or row.get("PostalCode") or ""
             ade_lines.append(f'"{order}","{addr}","{city}","{state}","{zip_code}"')
         ade_csv = "\n".join(ade_lines).encode("utf-8")
-    
-            # --- PRINTABLE CLIPBOARD MANIFEST ---
-        with st.expander("🖨️ Open Printable Clipboard Manifest"):
-            st.button("Print Manifest", on_click=None, help="Use browser Print (Ctrl+P)")
-            display_cols = [c for c in target_df.columns if c in ["Order_Number", "Work_Order", "Address", "Full Address", "Arrival", "Departure", "Total Miles", "Miles", "Duration"]]
-            if display_cols:
-                st.dataframe(target_df[display_cols], use_container_width=True)
-            else:
-                st.dataframe(target_df, use_container_width=True)
+
+st.markdown("---")
+
+# --- PRINTABLE CLIPBOARD MANIFEST ---
+with st.expander("📋 Open Printable Clipboard Manifest"):
+    st.button("Print Manifest", on_click=None, help="Use browser Print (Ctrl+P)")
+    display_cols = [c for c in target_df.columns if c in ["Order_Number", "Work_Order", "Address", "City", "State", "Zip", "Latitude", "Longitude"]]
+    if display_cols:
+        st.dataframe(target_df[display_cols], use_container_width=True)
+    else:
+        st.dataframe(target_df, use_container_width=True)
