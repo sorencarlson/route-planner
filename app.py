@@ -1314,8 +1314,8 @@ if not master_df.empty:
                 addr = row.get("Address") or row.get("Street") or ""
                 city = row.get("City") or ""
                 state = row.get("State") or ""
-                    zip_code = row.get("Zip") or row.get("PostalCode") or ""
-                    ade_lines.append(f'"{order}","{addr}","{city}","{state}","{zip_code}"')
+                zip_code = row.get("Zip") or row.get("PostalCode") or ""
+                ade_lines.append(f'"{order}","{addr}","{city}","{state}","{zip_code}"')
                 ade_csv = "\n".join(ade_lines).encode("utf-8")
                 st.download_button(
                     label="📋 InspectorAde",
