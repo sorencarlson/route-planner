@@ -1300,10 +1300,9 @@ if not master_df.empty:
     gpx_lines.append('  </rte>')
     gpx_lines.append('</gpx>')
     gpx_string = "\n".join(gpx_lines)
-    gpx_lines.append('</gpx>')
-    gpx_string = "\n".join(gpx_lines)
+    
         
-                st.download_button(
+    st.download_button(
                     label="🗺️ Download GPX",
                     data=gpx_string,
                     file_name=f"{route_save_name}.gpx",
