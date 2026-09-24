@@ -1282,31 +1282,31 @@ if not master_df.empty:
     
                    # 3. GPX Download
             with exp_col3:
-            gpx_lines = [
-                '<?xml version="1.0" encoding="UTF-8"?>',
-                '<gpx version="1.1" creator="RoutePlanner" xmlns="http://www.topografix.com/GPX/1/1">',
-                '  <rte>',
-                f'    <name>{route_save_name}</name>'
-            ]
-            for _, row in target_df.iterrows():
-                lat = row.get("Latitude") or row.get("lat") or row.get("Lat") or 0.0
-                lon = row.get("Longitude") or row.get("lon") or row.get("Lon") or row.get("Lng") or 0.0
-                insp_id = row.get("Inspection ID") or row.get("Inspection_ID") or row.get("Order_Number") or row.get("Order") or "4 Pasadena Ct"
-                addr = row.get("Address") or row.get("Full Address") or row.get("Street") or ""
-                clean_id = str(insp_id).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                clean_addr = str(addr).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                gpx_lines.append(f'    <rtept lat="{lat}" lon="{lon}"><name>{clean_id}</name><desc>{clean_addr}</desc></rtept>')
-            gpx_lines.append('  </rte>')
-            gpx_lines.append('</gpx>')
-            gpx_string = "\n".join(gpx_lines)
-    
-            st.download_button(
-                label="🗺️ Download GPX",
-                data=gpx_string,
-                file_name=f"{route_save_name}.gpx",
-                mime="application/gpx+xml",
-                key="dl_btn_gpx",
-            )
+                gpx_lines = [
+                    '<?xml version="1.0" encoding="UTF-8"?>',
+                    '<gpx version="1.1" creator="RoutePlanner" xmlns="http://www.topografix.com/GPX/1/1">',
+                    '  <rte>',
+                    f'    <name>{route_save_name}</name>'
+                ]
+                for _, row in target_df.iterrows():
+                    lat = row.get("Latitude") or row.get("lat") or row.get("Lat") or 0.0
+                    lon = row.get("Longitude") or row.get("lon") or row.get("Lon") or row.get("Lng") or 0.0
+                    insp_id = row.get("Inspection ID") or row.get("Inspection_ID") or row.get("Order_Number") or row.get("Order") or "4 Pasadena Ct"
+                    addr = row.get("Address") or row.get("Full Address") or row.get("Street") or ""
+                    clean_id = str(insp_id).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                    clean_addr = str(addr).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                    gpx_lines.append(f'    <rtept lat="{lat}" lon="{lon}"><name>{clean_id}</name><desc>{clean_addr}</desc></rtept>')
+                gpx_lines.append('  </rte>')
+                gpx_lines.append('</gpx>')
+                gpx_string = "\n".join(gpx_lines)
+        
+                st.download_button(
+                    label="🗺️ Download GPX",
+                    data=gpx_string,
+                    file_name=f"{route_save_name}.gpx",
+                    mime="application/gpx+xml",
+                    key="dl_btn_gpx",
+                )
             
             # 4. InspectorAde File Export
             with exp_col4:
