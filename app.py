@@ -1319,10 +1319,10 @@ if not master_df.empty:
             zip_code = row.get("Zip") or row.get("PostalCode") or ""
             ade_lines.append(f'"{order}","{addr}","{city}","{state}","{zip_code}"')
         ade_csv = "\n".join(ade_lines).encode("utf-8")
-
-st.markdown("---")
 # --- PRINTABLE CLIPBOARD MANIFEST ---
-with st.expander("📋 Open Printable Clipboard Manifest"):
-    st.button("Print Manifest", on_click=None, help="Use browser Print (Ctrl+P)")
-    st.dataframe(target_df.drop(columns=["Description"], errors="ignore"), use_container_width=True)
+if "target_df" in locals() and target_df is not None and not target_df.empty:
+    with st.expander("📋 Open Printable Clipboard Manifest"):
+        st.button("Print Manifest", on_click=None, help="Use browser Print (Ctrl+P)")
+        st.dataframe(target_df.drop(columns=["Description"], errors="ignore"), use_container_width=True)
+
 
