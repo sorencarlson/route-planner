@@ -1282,18 +1282,21 @@ if not master_df.empty:
     
             # 3. GPX Download
             with exp_col3:
-                gpx_lines = [
-                    '<?xml version="1.0" encoding="UTF-8"?>',
-                    '<gpx version="1.1" creator="RoutePlanner">'
-                ]
-                for _, row in target_df.iterrows():
-                    lat = row.get("Latitude") or row.get("lat") or row.get("Lat") or 0.0
-                    lon = row.get("Longitude") or row.get("lon") or row.get("Lon") or row.get("Lng") or 0.0
-                    addr = row.get("Address") or row.get("Full Address") or row.get("Street") or "Stop"
-                    clean_addr = str(addr).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                    gpx_lines.append(f'  <wpt lat="{lat}" lon="{lon}"><name>{clean_addr}</name></wpt>')
-                gpx_lines.append('</gpx>')
-                gpx_string = "\n".join(gpx_lines)
+               gpx_lines = [
+            '<?xml version="1.0" encoding="UTF-8"?>',
+            '<gpx version="1.1" creator="RoutePlanner" xmlns="http://www.topografix.com/GPX/1/1">',
+            '  <rte>',
+            f'    <name>{route_save_name}</name>'
+        ]
+        for _, row in target_df.iterrows():
+            lat = row.get("Latitude") or row.get("lat") or row.get("Lat") or 0.0
+            lon = row.get("Longitude") or row.get("lon") or row.get("Lon") or row.get("Lng") or 0.0
+            addr = row.get("Address") or row.get("Full Address") or row.get("Street") or ""
+            clean_addr = str(addr).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            gpx_lines.append(f'    <rtept lat="{lat}" lon="{lon}"><name>{clean_addr}</name></rtept>')
+        gpx_lines.append('  </rte>')
+        gpx_lines.append('</gpx>')
+        gpx_string = "\n".join(gpx_lines)
                 
                 st.download_button(
                     label="🗺️ Download GPX",
