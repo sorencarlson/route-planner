@@ -1324,5 +1324,5 @@ st.markdown("---")
 # --- PRINTABLE CLIPBOARD MANIFEST ---
 with st.expander("📋 Open Printable Clipboard Manifest"):
     st.button("Print Manifest", on_click=None, help="Use browser Print (Ctrl+P)")
-    st.dataframe(target_df, use_container_width=True)
+    st.dataframe(target_df.drop(columns=["Description"], errors="ignore"), use_container_width=True)
 
