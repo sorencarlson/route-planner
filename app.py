@@ -1321,7 +1321,6 @@ if not master_df.empty:
         ade_csv = "\n".join(ade_lines).encode("utf-8")
 
 st.markdown("---")
-
 # --- PRINTABLE CLIPBOARD MANIFEST ---
 with st.expander("📋 Open Printable Clipboard Manifest"):
     st.button("Print Manifest", on_click=None, help="Use browser Print (Ctrl+P)")
@@ -1330,3 +1329,4 @@ with st.expander("📋 Open Printable Clipboard Manifest"):
         st.dataframe(target_df[display_cols], use_container_width=True)
     else:
         st.dataframe(target_df, use_container_width=True)
+
