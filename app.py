@@ -1322,7 +1322,7 @@ if not master_df.empty:
                     data=ade_csv,
                     file_name=f"{route_save_name}_InspectorAde.csv",
                     mime="text/csv",
-                    key="dl_btn_inspectorade",
+                    key=f"dl_btn_inspectorade_{route_save_name}",
                 )
     
             st.markdown("---")
