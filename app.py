@@ -1298,13 +1298,13 @@ if not master_df.empty:
         gpx_lines.append('</gpx>')
         gpx_string = "\n".join(gpx_lines)
                 
-            st.download_button(
-                label="🗺️ Download GPX",
-                data=gpx_string,
-                file_name=f"{route_save_name}.gpx",
-                mime="application/gpx+xml",
-                key="dl_btn_gpx",
-            )
+        st.download_button(
+            label="🗺️ Download GPX",
+            data=gpx_string,
+            file_name=f"{route_save_name}.gpx",
+            mime="application/gpx+xml",
+            key="dl_btn_gpx",
+        )
     
             # 4. InspectorAde File Export
             with exp_col4:
