@@ -1289,14 +1289,14 @@ if not master_df.empty:
                     f'    <name>{route_save_name}</name>'
                 ]
                 for _, row in target_df.iterrows():
-            lat = row.get("Latitude") or row.get("lat") or row.get("Lat") or 0.0
-            lon = row.get("Longitude") or row.get("lon") or row.get("Lon") or row.get("Lng") or 0.0
-            insp_id = row.get("Inspection ID") or row.get("Inspection_ID") or row.get("Order_Number") or row.get("Work_Order") or row.get("Order") or row.get("Key") or ""
-            addr = row.get("Address") or row.get("Full Address") or row.get("Street") or row.get("Property Address") or ""
-            clean_id = str(insp_id).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            clean_addr = str(addr).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            gpx_lines.append(f'    <rtept lat="{lat}" lon="{lon}"><name>{clean_id}</name><desc>{clean_addr}</desc></rtept>')
-        gpx_lines.append('  </rte>')
+                lat = row.get("Latitude") or row.get("lat") or row.get("Lat") or 0.0
+                lon = row.get("Longitude") or row.get("lon") or row.get("Lon") or row.get("Lng") or 0.0
+                insp_id = row.get("Inspection ID") or row.get("Inspection_ID") or row.get("Order_Number") or row.get("Work_Order") or row.get("Order") or row.get("Key") or ""
+                addr = row.get("Address") or row.get("Full Address") or row.get("Street") or row.get("Property Address") or ""
+                clean_id = str(insp_id).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                clean_addr = str(addr).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                gpx_lines.append(f'    <rtept lat="{lat}" lon="{lon}"><name>{clean_id}</name><desc>{clean_addr}</desc></rtept>')
+                gpx_lines.append('  </rte>')
                 gpx_lines.append('</gpx>')
                 gpx_string = "\n".join(gpx_lines)
         
