@@ -1074,7 +1074,23 @@ if not master_df.empty:
             with col_list:
                 st.markdown(f"### 📋 Manage Stops ({len(valid_master_df)} Active)")
                 st.caption("Check boxes to drop stops, then click remove:")
-
+        st.markdown("##### ⇄ Move Single Stop")
+                c_m1, c_m2, c_m3 = st.columns([3, 1, 1])
+                with c_m1:
+                    move_idx = st.selectbox("Inspection to move:", range(len(valid_master_df)), format_func=lambda x: f"#{x+1}: {valid_master_df.iloc[x]['Address']}", key="sel_move_stop")
+                with c_m2:
+                    target_pos = st.number_input("New #", min_value=1, max_value=len(valid_master_df), value=move_idx + 1, key="num_move_pos")
+                with c_m3:
+                    st.write("")
+                    st.write("")
+                    if st.button("Move", type="primary", key="btn_apply_move"):
+                        row = valid_master_df.iloc[[move_idx]]
+                        rest = valid_master_df.drop(valid_master_df.index[move_idx])
+                        pos = int(target_pos) - 1
+                        new_df = pd.concat([rest.iloc[:pos], row, rest.iloc[pos:]]).reset_index(drop=True)
+                        persist_stops(new_df)
+                        st.rerun()
+                st.write("---")
                 table_rows = []
                 for i, r in valid_master_df.iterrows():
                     table_rows.append({
