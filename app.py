@@ -1077,9 +1077,9 @@ if not master_df.empty:
                 st.markdown("##### ⇄ Move Single Stop")
                 c_m1, c_m2, c_m3 = st.columns([3, 1, 1])
                 with c_m1:
-                move_idx = st.selectbox("Inspection to move:", range(len(valid_master_df)), format_func=lambda x: f"#{x+1}: {valid_master_df.iloc[x]['Address']}", key="sel_move_stop")
+                    move_idx = st.selectbox("Inspection to move:", range(len(valid_master_df)), format_func=lambda x: f"#{x+1}: {valid_master_df.iloc[x]['Address']}", key="sel_move_stop")
                 with c_m2:
-                target_pos = st.number_input("New #", min_value=1, max_value=len(valid_master_df), value=move_idx + 1, key="num_move_pos")
+                    target_pos = st.number_input("New #", min_value=1, max_value=len(valid_master_df), value=move_idx + 1, key="num_move_pos")
                 with c_m3:
                     st.write("")
                     st.write("")
