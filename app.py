@@ -1279,11 +1279,9 @@ if not master_df.empty:
                     mime="text/csv",
                     key="dl_btn_csv",
                 )
-    
-                   # 3. GPX Download
-           with exp_col3:
-               gpx_lines = [
-                    'with exp_col3:
+
+# 3. GPX Download
+    with exp_col3:
         gpx_lines = [
             '<?xml version="1.0" encoding="UTF-8"?>',
             '<gpx version="1.1" creator="RoutePlanner" xmlns="http://www.topografix.com/GPX/1/1">',
@@ -1322,42 +1320,6 @@ if not master_df.empty:
             zip_code = row.get("Zip") or row.get("PostalCode") or ""
             ade_lines.append(f'"{order}","{addr}","{city}","{state}","{zip_code}"')
         ade_csv = "\n".join(ade_lines).encode("utf-8")
-        ]
-
-        for _, row in target_df.iterrows():
-            lat = row.get("Latitude") or row.get("lat") or row.get("Lat") or 0.0
-            lon = row.get("Longitude") or row.get("lon") or row.get("Lon") or row.get("Lng") or 0.0
-            insp_id = row.get("Inspection ID") or row.get("Inspection_ID") or row.get("Order_Number") or row.get("Work_Order") or row.get("Order") or row.get("Key") or ""
-            addr = row.get("Address") or row.get("Full Address") or row.get("Street") or row.get("Property Address") or ""
-            clean_id = str(insp_id).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            clean_addr = str(addr).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            gpx_lines.append(f'    <rtept lat="{lat}" lon="{lon}"><name>{clean_id}</name><desc>{clean_addr}</desc></rtept>')
-        gpx_lines.append('  </rte>')
-        gpx_lines.append('</gpx>')
-        gpx_string = "\n".join(gpx_lines)
-
-        st.download_button(
-            label="🗺️ Download GPX",
-            data=gpx_string,
-            file_name=f"{route_save_name}.gpx",
-            mime="application/gpx+xml",
-            key="dl_btn_gpx",
-        )
-
-    # 4. InspectorAde File Export
-    with exp_col4:
-        ade_lines = ["OrderNumber,Address,City,State,Zip"]
-        for _, row in target_df.iterrows():
-            order = row.get("Order_Number") or row.get("Work_Order") or row.get("Order") or ""
-            addr = row.get("Address") or row.get("Street") or ""
-            city = row.get("City") or ""
-            state = row.get("State") or ""
-            zip_code = row.get("Zip") or row.get("PostalCode") or ""
-            ade_lines.append(f'"{order}","{addr}","{city}","{state}","{zip_code}"')
-        ade_csv = "\n".join(ade_lines).encode("utf-8")
-                    
-    
-            st.markdown("---")
     
             # --- PRINTABLE CLIPBOARD MANIFEST ---
             with st.expander("🖨️ Open Printable Clipboard Manifest"):
