@@ -1320,13 +1320,12 @@ if not master_df.empty:
             zip_code = row.get("Zip") or row.get("PostalCode") or ""
             ade_lines.append(f'"{order}","{addr}","{city}","{state}","{zip_code}"')
             ade_csv = "\n".join(ade_lines).encode("utf-8")
-            st.download_button(
+        st.download_button(
             label="Download InspectorAde CSV",
             data=ade_csv,
             file_name=f"InspectorAde_Route_{ts_now}.csv",
-            mime="text/csv",
-            key=f"dl_btn_inspectorade_{ts_now}"
-        )
+            mime="text/csv"
+            )
 # --- PRINTABLE CLIPBOARD MANIFEST ---
 if "target_df" in locals() and target_df is not None and not target_df.empty:
     with st.expander("📋 Open Printable Clipboard Manifest"):
