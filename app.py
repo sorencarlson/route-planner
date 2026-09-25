@@ -1331,5 +1331,32 @@ if "target_df" in locals() and target_df is not None and not target_df.empty:
     with st.expander("📋 Open Printable Clipboard Manifest"):
         st.button("Print Manifest", on_click=None, help="Use browser Print (Ctrl+P)")
         st.dataframe(target_df.drop(columns=["Description"], errors="ignore"), use_container_width=True)
-
+# --- MOBILE DRIVER DECK CARDS ---
+if "target_df" in locals() and target_df is not None and not target_df.empty:
+    st.markdown("---")
+    st.subheader("📱 Turn-by-Turn Inspection Stops")
+    
+    for idx, row in target_df.iterrows():
+        stop_num = idx + 1
+        addr = row.get("Address") or row.get("Street") or "No Address"
+        city = row.get("City") or ""
+        state = row.get("State") or ""
+        zip_c = row.get("Zip") or row.get("PostalCode") or ""
+        full_dest = f"{addr}, {city}, {state} {zip_c}".strip(", ")
+        
+        order_num = row.get("Order_Number") or row.get("Work_Order") or row.get("Order") or "N/A"
+        desc = row.get("Description") or ""
+        
+        maps_url = f"https://www.google.com/maps/dir/?api=1&destination={full_dest.replace(' ', '+')}"
+        
+        with st.container():
+            st.markdown(f"### Stop {stop_num}: {addr}")
+            if city or state or zip_c:
+                st.caption(f"{city}, {state} {zip_c}")
+            if order_num != "N/A":
+                st.write(f"**Order #:** {order_num}")
+            if desc:
+                st.write(f"**Details:** {desc}")
+            st.link_button(f"🧭 Navigate to Stop {stop_num}", maps_url, use_container_width=True)
+            st.markdown("---")
 
