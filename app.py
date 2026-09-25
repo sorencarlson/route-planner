@@ -1304,7 +1304,9 @@ if not master_df.empty:
         st.download_button(
             label="🗺️ Download GPX",
             data=gpx_string,
-            file_name=f"{route_save_name}.gpx",
+            from datetime import datetime
+            ts_now = datetime.now().strftime("%Y%m%d_%H%M%S")
+            file_name=f"Route_{ts_now}.gpx",
             mime="application/gpx+xml",
             key="dl_btn_gpx",
         )
@@ -1319,6 +1321,13 @@ if not master_df.empty:
             zip_code = row.get("Zip") or row.get("PostalCode") or ""
             ade_lines.append(f'"{order}","{addr}","{city}","{state}","{zip_code}"')
         ade_csv = "\n".join(ade_lines).encode("utf-8")
+        st.download_button(
+            label="Download InspectorAde CSV",
+            data=ade_csv,
+            file_name=f"InspectorAde_Route_{ts_now}.csv",
+            mime="text/csv",
+            key="dl_btn_inspectorade"
+        )
 # --- PRINTABLE CLIPBOARD MANIFEST ---
 if "target_df" in locals() and target_df is not None and not target_df.empty:
     with st.expander("📋 Open Printable Clipboard Manifest"):
