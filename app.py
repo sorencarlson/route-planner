@@ -1333,38 +1333,6 @@ if "target_df" in locals() and target_df is not None and not target_df.empty:
         st.dataframe(target_df.drop(columns=["Description"], errors="ignore"), use_container_width=True)
 # --- MOBILE DRIVER DECK CARDS ---
 if "target_df" in locals() and target_df is not None and not target_df.empty:
-    st.markdown("""
-        <style>
-        .stApp {
-            padding-bottom: 90px;
-        }
-        .driver-card {
-            background-color: #ffffff;
-            border-radius: 12px;
-            padding: 16px;
-            margin-bottom: 16px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-            border-left: 6px solid #1E88E5;
-        }
-        .driver-card-title {
-            font-size: 1.15rem;
-            font-weight: 700;
-            color: #1a1a1a;
-            margin-bottom: 4px;
-        }
-        .driver-card-sub {
-            font-size: 0.95rem;
-            color: #4b5563;
-            margin-bottom: 8px;
-        }
-        .driver-card-meta {
-            font-size: 0.85rem;
-            color: #6b7280;
-            margin-bottom: 4px;
-        }
-        </style>
-    """, unsafe_allow_html=True)
-
     st.markdown("---")
     st.subheader("📱 Driver Route Deck")
 
@@ -1373,7 +1341,6 @@ if "target_df" in locals() and target_df is not None and not target_df.empty:
         raw_addr = str(row.get("Address") or row.get("Street") or "").strip()
         raw_desc = str(row.get("Description") or "").strip()
         
-        # Pull address if it was stored inside Description (e.g. '6406 GEORGETOWN RD / ...')
         if (not raw_addr or raw_addr.lower() == "nan") and raw_desc:
             addr = raw_desc.split("/")[0].strip()
         else:
@@ -1396,14 +1363,13 @@ if "target_df" in locals() and target_df is not None and not target_df.empty:
 
         maps_url = f"https://www.google.com/maps/dir/?api=1&destination={full_dest.replace(' ', '+')}"
 
-        st.markdown(f"""
-            <div class="driver-card">
-                <div class="driver-card-title">Stop {stop_num}: {addr}</div>
-                {f'<div class="driver-card-sub">{city_state}</div>' if city_state else ''}
-                {f'<div class="driver-card-meta"><b>Order #:</b> {order_num}</div>' if order_num and order_num.lower() != 'nan' else ''}
-                {f'<div class="driver-card-meta"><b>Notes:</b> {raw_desc}</div>' if raw_desc and raw_desc != addr else ''}
-            </div>
-        """, unsafe_allow_html=True)
-        st.link_button(f"🧭 Launch Maps: Stop {stop_num}", maps_url, use_container_width=True, key=f"nav_btn_{idx}")
-        st.write("")
-
+        with st.container(border=True):
+            st.markdown(f"### Stop {stop_num}: {addr}")
+            if city_state:
+                st.caption(f"📍 {city_state}")
+            if order_num and order_num.lower() != "nan":
+                st.markdown(f"**Order #:** `{order_num}`")
+            if raw_desc and raw_desc != addr:
+                st.markdown(f"**Notes:** {raw_desc}")
+            
+            st.link_button(f"🧭 Launch Maps: Stop {stop_num}", maps_url, use_container_width=True, key=f"nav_btn_{idx}")
