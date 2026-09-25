@@ -1340,9 +1340,12 @@ if "target_df" in locals() and target_df is not None and not target_df.empty:
     
     total_stops = len(target_df)
     cur_idx = st.session_state.current_stop_idx
-    row = target_df.iloc[cur_idx]
+    completed_stops = cur_idx
+    remaining_stops = total_stops - cur_idx
     
+    row = target_df.iloc[cur_idx]
     stop_num = cur_idx + 1
+    
     raw_addr = str(row.get("Address") or row.get("Street") or "").strip()
     raw_desc = str(row.get("Description") or "").strip()
     
@@ -1365,9 +1368,17 @@ if "target_df" in locals() and target_df is not None and not target_df.empty:
     if (not order_num or order_num.lower() == "nan") and "/" in raw_desc:
         order_num = raw_desc.split("/")[-1].strip()
 
-    # Active Stop Card
+    # --- LIVE HUD METRICS BAR ---
+    st.markdown(f"""
+        <div style="background-color:#111827; color:#f9fafb; padding:12px; border-radius:10px; margin-bottom:12px; display:flex; justify-content:space-around; text-align:center;">
+            <div><span style="font-size:0.75rem; color:#9ca3af; text-transform:uppercase;">Stop</span><br><b style="font-size:1.15rem; color:#60a5fa;">{stop_num}/{total_stops}</b></div>
+            <div><span style="font-size:0.75rem; color:#9ca3af; text-transform:uppercase;">Done</span><br><b style="font-size:1.15rem; color:#34d399;">{completed_stops}</b></div>
+            <div><span style="font-size:0.75rem; color:#9ca3af; text-transform:uppercase;">Left</span><br><b style="font-size:1.15rem; color:#f87171;">{remaining_stops}</b></div>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # --- ACTIVE STOP CARD ---
     with st.container(border=True):
-        st.markdown(f"## 🎯 Active Stop {stop_num} of {total_stops}")
         st.markdown(f"### {addr}")
         if city_state:
             st.caption(f"📍 {city_state}")
@@ -1376,7 +1387,7 @@ if "target_df" in locals() and target_df is not None and not target_df.empty:
         if raw_desc and raw_desc != addr:
             st.markdown(f"**Notes:** {raw_desc}")
 
-    # Navigation Controls
+    # --- CONTROLS ---
     col_prev, col_next = st.columns(2)
     with col_prev:
         if st.button("⬅️ Previous Stop", use_container_width=True, disabled=(cur_idx == 0)):
@@ -1387,9 +1398,9 @@ if "target_df" in locals() and target_df is not None and not target_df.empty:
             st.session_state.current_stop_idx += 1
             st.rerun()
 
-    # Embedded Live Google Map
+    # --- LIVE EMBEDDED MAP ---
     embed_url = f"https://maps.google.com/maps?q={full_dest.replace(' ', '+')}&output=embed"
     st.markdown(
-        f'<iframe width="100%" height="450" frameborder="0" style="border:0; border-radius:12px; margin-top:12px;" src="{embed_url}" allowfullscreen></iframe>',
+        f'<iframe width="100%" height="420" frameborder="0" style="border:0; border-radius:12px; margin-top:12px;" src="{embed_url}" allowfullscreen></iframe>',
         unsafe_allow_html=True
     )
