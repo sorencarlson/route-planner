@@ -1331,35 +1331,47 @@ if "target_df" in locals() and target_df is not None and not target_df.empty:
     with st.expander("📋 Open Printable Clipboard Manifest"):
         st.button("Print Manifest", on_click=None, help="Use browser Print (Ctrl+P)")
         st.dataframe(target_df.drop(columns=["Description"], errors="ignore"), use_container_width=True)
-# --- EMBEDDED IN-APP HEADS-UP NAVIGATION ---
+# --- CIRCUIT-STYLE DYNAMIC DRIVER HUD & DECK ---
 import datetime
 
 if "target_df" in locals() and target_df is not None and not target_df.empty:
     if "current_stop_idx" not in st.session_state:
         st.session_state.current_stop_idx = 0
 
-    st.markdown("---")
-    
     total_stops = len(target_df)
     cur_idx = st.session_state.current_stop_idx
     completed_stops = cur_idx
     remaining_stops = max(0, total_stops - cur_idx)
-    
-    # 1. Pull directly from the optimizer's calculated variables if present
-    route_miles = locals().get("total_miles") or st.session_state.get("total_miles") or 445.4
-    calc_finish = locals().get("projected_finish_str") or st.session_state.get("projected_finish") or "10:57 AM"
-    calc_office = locals().get("office_eta_str") or st.session_state.get("office_eta") or "12:10 AM"
 
-    # Dynamic remaining miles based on progress through the route
-    pct_left = remaining_stops / total_stops if total_stops > 0 else 1.0
-    miles_remaining = float(route_miles) * pct_left
+    # Eastern Time Lock (UTC-4)
+    edt_tz = datetime.timezone(datetime.timedelta(hours=-4))
+    now_edt = datetime.datetime.now(edt_tz)
+
+    # Route Miles
+    total_route_miles = 445.4
+    if "total_miles" in locals() and locals().get("total_miles"):
+        try: total_route_miles = float(locals().get("total_miles"))
+        except: pass
+    elif "total_miles" in st.session_state:
+        try: total_route_miles = float(st.session_state.get("total_miles"))
+        except: pass
+
+    pct_left = remaining_stops / total_stops if total_stops > 0 else 0.0
+    miles_left = total_route_miles * pct_left
+
+    # Circuit Pacing: 42 mph driving + 5 mins on-site buffer
+    drive_mins_left = (miles_left / 42.0) * 60.0
+    onsite_mins_left = remaining_stops * 5.0
+    total_mins_remaining = drive_mins_left + onsite_mins_left
+
+    finish_dt = now_edt + datetime.timedelta(minutes=total_mins_remaining)
+    finish_str = finish_dt.strftime("%I:%M %p").lstrip("0")
 
     row = target_df.iloc[cur_idx]
     stop_num = cur_idx + 1
-    
+
     raw_addr = str(row.get("Address") or row.get("Street") or "").strip()
     raw_desc = str(row.get("Description") or "").strip()
-    
     if (not raw_addr or raw_addr.lower() == "nan") and raw_desc:
         addr = raw_desc.split("/")[0].strip()
     else:
@@ -1368,29 +1380,26 @@ if "target_df" in locals() and target_df is not None and not target_df.empty:
     city = str(row.get("City") or "").strip()
     state = str(row.get("State") or "").strip()
     zip_c = str(row.get("Zip") or row.get("PostalCode") or "").strip()
-    if city.lower() == "nan": city = ""
-    if state.lower() == "nan": state = ""
-    if zip_c.lower() == "nan": zip_c = ""
-
-    city_state = ", ".join([p for p in [city, state, zip_c] if p])
+    loc_parts = [p for p in [city, state, zip_c] if p and p.lower() != "nan"]
+    city_state = ", ".join(loc_parts)
     full_dest = f"{addr}, {city_state}".strip(", ")
-    
+
     order_num = str(row.get("Order_Number") or row.get("Work_Order") or row.get("Order") or "").strip()
     if (not order_num or order_num.lower() == "nan") and "/" in raw_desc:
         order_num = raw_desc.split("/")[-1].strip()
 
-    # --- TRUE ROUTE HUD STATS BAR ---
+    # Dynamic HUD
     st.markdown(f"""
-        <div style="background-color:#0d1117; border: 1px solid #30363d; color:#f0f6fc; padding:12px 8px; border-radius:12px; margin-bottom:12px; display:flex; justify-content:space-around; align-items:center; text-align:center;">
+        <div style="background-color:#0d1117; border:1px solid #30363d; color:#f0f6fc; padding:12px; border-radius:12px; margin-bottom:12px; display:flex; justify-content:space-around; align-items:center; text-align:center;">
             <div><span style="font-size:0.65rem; color:#8b949e; text-transform:uppercase; font-weight:600;">Stop</span><br><b style="font-size:1.05rem; color:#58a6ff;">{stop_num}/{total_stops}</b></div>
             <div><span style="font-size:0.65rem; color:#8b949e; text-transform:uppercase; font-weight:600;">Done</span><br><b style="font-size:1.05rem; color:#3fb950;">{completed_stops}</b></div>
             <div><span style="font-size:0.65rem; color:#8b949e; text-transform:uppercase; font-weight:600;">Left</span><br><b style="font-size:1.05rem; color:#f85149;">{remaining_stops}</b></div>
-            <div><span style="font-size:0.65rem; color:#8b949e; text-transform:uppercase; font-weight:600;">Miles Left</span><br><b style="font-size:1.05rem; color:#d29922;">{miles_remaining:.1f} mi</b></div>
-            <div style="border-left:1px solid #30363d; padding-left:8px;"><span style="font-size:0.65rem; color:#8b949e; text-transform:uppercase; font-weight:600;">Finish</span><br><b style="font-size:1.05rem; color:#e3b341;">{calc_finish}</b></div>
+            <div><span style="font-size:0.65rem; color:#8b949e; text-transform:uppercase; font-weight:600;">Miles Left</span><br><b style="font-size:1.05rem; color:#d29922;">{miles_left:.0f} mi</b></div>
+            <div style="border-left:1px solid #30363d; padding-left:8px;"><span style="font-size:0.65rem; color:#8b949e; text-transform:uppercase; font-weight:600;">Est. Finish</span><br><b style="font-size:1.15rem; color:#38bdf8;">{finish_str}</b></div>
         </div>
     """, unsafe_allow_html=True)
 
-    # --- ACTIVE STOP CARD ---
+    # Active Card
     with st.container(border=True):
         st.markdown(f"### {addr}")
         if city_state:
@@ -1400,7 +1409,7 @@ if "target_df" in locals() and target_df is not None and not target_df.empty:
         if raw_desc and raw_desc != addr:
             st.markdown(f"**Notes:** {raw_desc}")
 
-    # --- CONTROLS ---
+    # Navigation Controls
     col_prev, col_next = st.columns(2)
     with col_prev:
         if st.button("⬅️ Previous Stop", use_container_width=True, disabled=(cur_idx == 0)):
@@ -1411,7 +1420,7 @@ if "target_df" in locals() and target_df is not None and not target_df.empty:
             st.session_state.current_stop_idx += 1
             st.rerun()
 
-    # --- LIVE EMBEDDED MAP ---
+    # Embedded Live Google Map
     embed_url = f"https://maps.google.com/maps?q={full_dest.replace(' ', '+')}&output=embed"
     st.markdown(
         f'<iframe width="100%" height="420" frameborder="0" style="border:0; border-radius:12px; margin-top:12px;" src="{embed_url}" allowfullscreen></iframe>',
