@@ -1305,7 +1305,7 @@ if not master_df.empty:
         st.download_button(
             label="🗺️ Download GPX",
             data=gpx_string,
-            file_name=f"Route_{ts_now}.gpx",
+            file_name="Route_Export.gpx",
             mime="application/gpx+xml",
             key="dl_btn_gpx",
         )
@@ -1323,7 +1323,7 @@ if not master_df.empty:
         st.download_button(
             label="Download InspectorAde CSV",
             data=ade_csv,
-            file_name=f"InspectorAde_Route_{ts_now}.csv",
+            file_name="InspectorAde_Export.csv",
             mime="text/csv"
             )
 # --- PRINTABLE CLIPBOARD MANIFEST ---
