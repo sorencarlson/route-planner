@@ -1325,7 +1325,7 @@ if not master_df.empty:
             data=ade_csv,
             file_name=f"InspectorAde_Route_{ts_now}.csv",
             mime="text/csv",
-            key="dl_btn_inspectorade_mobile"
+            key=f"dl_btn_inspectorade_{ts_now}"
         )
 # --- PRINTABLE CLIPBOARD MANIFEST ---
 if "target_df" in locals() and target_df is not None and not target_df.empty:
