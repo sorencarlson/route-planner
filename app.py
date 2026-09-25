@@ -1332,6 +1332,8 @@ if "target_df" in locals() and target_df is not None and not target_df.empty:
         st.button("Print Manifest", on_click=None, help="Use browser Print (Ctrl+P)")
         st.dataframe(target_df.drop(columns=["Description"], errors="ignore"), use_container_width=True)
 # --- EMBEDDED IN-APP HEADS-UP NAVIGATION ---
+import datetime
+
 if "target_df" in locals() and target_df is not None and not target_df.empty:
     if "current_stop_idx" not in st.session_state:
         st.session_state.current_stop_idx = 0
@@ -1346,6 +1348,16 @@ if "target_df" in locals() and target_df is not None and not target_df.empty:
     row = target_df.iloc[cur_idx]
     stop_num = cur_idx + 1
     
+    # Estimate finish time based on remaining stops (approx. 10 mins per stop drive+inspect)
+    now = datetime.datetime.now()
+    est_finish = now + datetime.timedelta(minutes=(remaining_stops * 10))
+    finish_eta_str = est_finish.strftime("%I:%M %p")
+    
+    # Distance/duration if stored in route dataframe
+    leg_miles = row.get("Distance") or row.get("Leg_Miles") or row.get("Miles") or ""
+    leg_time = row.get("Duration") or row.get("Drive_Time") or row.get("Time") or ""
+    leg_info_str = f"{leg_miles} mi • {leg_time}" if (leg_miles and leg_time) else (f"{leg_miles} mi" if leg_miles else "Next")
+
     raw_addr = str(row.get("Address") or row.get("Street") or "").strip()
     raw_desc = str(row.get("Description") or "").strip()
     
@@ -1368,12 +1380,13 @@ if "target_df" in locals() and target_df is not None and not target_df.empty:
     if (not order_num or order_num.lower() == "nan") and "/" in raw_desc:
         order_num = raw_desc.split("/")[-1].strip()
 
-    # --- LIVE HUD METRICS BAR ---
+    # --- EXPANDED LIVE HUD METRICS BAR ---
     st.markdown(f"""
-        <div style="background-color:#111827; color:#f9fafb; padding:12px; border-radius:10px; margin-bottom:12px; display:flex; justify-content:space-around; text-align:center;">
-            <div><span style="font-size:0.75rem; color:#9ca3af; text-transform:uppercase;">Stop</span><br><b style="font-size:1.15rem; color:#60a5fa;">{stop_num}/{total_stops}</b></div>
-            <div><span style="font-size:0.75rem; color:#9ca3af; text-transform:uppercase;">Done</span><br><b style="font-size:1.15rem; color:#34d399;">{completed_stops}</b></div>
-            <div><span style="font-size:0.75rem; color:#9ca3af; text-transform:uppercase;">Left</span><br><b style="font-size:1.15rem; color:#f87171;">{remaining_stops}</b></div>
+        <div style="background-color:#111827; color:#f9fafb; padding:14px; border-radius:12px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center; text-align:center;">
+            <div><span style="font-size:0.7rem; color:#9ca3af; text-transform:uppercase;">Stop</span><br><b style="font-size:1.1rem; color:#60a5fa;">{stop_num}/{total_stops}</b></div>
+            <div><span style="font-size:0.7rem; color:#9ca3af; text-transform:uppercase;">Done</span><br><b style="font-size:1.1rem; color:#34d399;">{completed_stops}</b></div>
+            <div><span style="font-size:0.7rem; color:#9ca3af; text-transform:uppercase;">Left</span><br><b style="font-size:1.1rem; color:#f87171;">{remaining_stops}</b></div>
+            <div style="border-left:1px solid #374151; padding-left:10px;"><span style="font-size:0.7rem; color:#9ca3af; text-transform:uppercase;">Est. Finish</span><br><b style="font-size:1.1rem; color:#fbbf24;">{finish_eta_str}</b></div>
         </div>
     """, unsafe_allow_html=True)
 
