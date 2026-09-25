@@ -1331,45 +1331,65 @@ if "target_df" in locals() and target_df is not None and not target_df.empty:
     with st.expander("📋 Open Printable Clipboard Manifest"):
         st.button("Print Manifest", on_click=None, help="Use browser Print (Ctrl+P)")
         st.dataframe(target_df.drop(columns=["Description"], errors="ignore"), use_container_width=True)
-# --- MOBILE DRIVER DECK CARDS ---
+# --- EMBEDDED IN-APP HEADS-UP NAVIGATION ---
 if "target_df" in locals() and target_df is not None and not target_df.empty:
+    if "current_stop_idx" not in st.session_state:
+        st.session_state.current_stop_idx = 0
+
     st.markdown("---")
-    st.subheader("📱 Driver Route Deck")
+    
+    total_stops = len(target_df)
+    cur_idx = st.session_state.current_stop_idx
+    row = target_df.iloc[cur_idx]
+    
+    stop_num = cur_idx + 1
+    raw_addr = str(row.get("Address") or row.get("Street") or "").strip()
+    raw_desc = str(row.get("Description") or "").strip()
+    
+    if (not raw_addr or raw_addr.lower() == "nan") and raw_desc:
+        addr = raw_desc.split("/")[0].strip()
+    else:
+        addr = raw_addr or "Stop Location"
 
-    for idx, row in target_df.iterrows():
-        stop_num = idx + 1
-        raw_addr = str(row.get("Address") or row.get("Street") or "").strip()
-        raw_desc = str(row.get("Description") or "").strip()
-        
-        if (not raw_addr or raw_addr.lower() == "nan") and raw_desc:
-            addr = raw_desc.split("/")[0].strip()
-        else:
-            addr = raw_addr or "Stop Location"
+    city = str(row.get("City") or "").strip()
+    state = str(row.get("State") or "").strip()
+    zip_c = str(row.get("Zip") or row.get("PostalCode") or "").strip()
+    if city.lower() == "nan": city = ""
+    if state.lower() == "nan": state = ""
+    if zip_c.lower() == "nan": zip_c = ""
 
-        city = str(row.get("City") or "").strip()
-        state = str(row.get("State") or "").strip()
-        zip_c = str(row.get("Zip") or row.get("PostalCode") or "").strip()
-        if city.lower() == "nan": city = ""
-        if state.lower() == "nan": state = ""
-        if zip_c.lower() == "nan": zip_c = ""
+    city_state = ", ".join([p for p in [city, state, zip_c] if p])
+    full_dest = f"{addr}, {city_state}".strip(", ")
+    
+    order_num = str(row.get("Order_Number") or row.get("Work_Order") or row.get("Order") or "").strip()
+    if (not order_num or order_num.lower() == "nan") and "/" in raw_desc:
+        order_num = raw_desc.split("/")[-1].strip()
 
-        loc_parts = [p for p in [city, state, zip_c] if p]
-        city_state = ", ".join(loc_parts)
+    # Active Stop Card
+    with st.container(border=True):
+        st.markdown(f"## 🎯 Active Stop {stop_num} of {total_stops}")
+        st.markdown(f"### {addr}")
+        if city_state:
+            st.caption(f"📍 {city_state}")
+        if order_num and order_num.lower() != "nan":
+            st.markdown(f"**Order #:** `{order_num}`")
+        if raw_desc and raw_desc != addr:
+            st.markdown(f"**Notes:** {raw_desc}")
 
-        full_dest = f"{addr}, {city_state}".strip(", ")
-        order_num = str(row.get("Order_Number") or row.get("Work_Order") or row.get("Order") or "").strip()
-        if (not order_num or order_num.lower() == "nan") and "/" in raw_desc:
-            order_num = raw_desc.split("/")[-1].strip()
+    # Navigation Controls
+    col_prev, col_next = st.columns(2)
+    with col_prev:
+        if st.button("⬅️ Previous Stop", use_container_width=True, disabled=(cur_idx == 0)):
+            st.session_state.current_stop_idx -= 1
+            st.rerun()
+    with col_next:
+        if st.button("✅ Next Stop", type="primary", use_container_width=True, disabled=(cur_idx >= total_stops - 1)):
+            st.session_state.current_stop_idx += 1
+            st.rerun()
 
-        maps_url = f"https://www.google.com/maps/dir/?api=1&destination={full_dest.replace(' ', '+')}"
-
-        with st.container(border=True):
-            st.markdown(f"### Stop {stop_num}: {addr}")
-            if city_state:
-                st.caption(f"📍 {city_state}")
-            if order_num and order_num.lower() != "nan":
-                st.markdown(f"**Order #:** `{order_num}`")
-            if raw_desc and raw_desc != addr:
-                st.markdown(f"**Notes:** {raw_desc}")
-            
-            st.link_button(f"🧭 Launch Maps: Stop {stop_num}", maps_url, use_container_width=True, key=f"nav_btn_{idx}")
+    # Embedded Live Google Map
+    embed_url = f"https://maps.google.com/maps?q={full_dest.replace(' ', '+')}&output=embed"
+    st.markdown(
+        f'<iframe width="100%" height="450" frameborder="0" style="border:0; border-radius:12px; margin-top:12px;" src="{embed_url}" allowfullscreen></iframe>',
+        unsafe_allow_html=True
+    )
