@@ -1319,8 +1319,8 @@ if not master_df.empty:
             state = row.get("State") or ""
             zip_code = row.get("Zip") or row.get("PostalCode") or ""
             ade_lines.append(f'"{order}","{addr}","{city}","{state}","{zip_code}"')
-        ade_csv = "\n".join(ade_lines).encode("utf-8")
-        st.download_button(
+            ade_csv = "\n".join(ade_lines).encode("utf-8")
+            st.download_button(
             label="Download InspectorAde CSV",
             data=ade_csv,
             file_name=f"InspectorAde_Route_{ts_now}.csv",
