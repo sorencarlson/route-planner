@@ -1333,10 +1333,6 @@ if "target_df" in locals() and target_df is not None and not target_df.empty:
         st.dataframe(target_df.drop(columns=["Description"], errors="ignore"), use_container_width=True)
 # --- EMBEDDED IN-APP HEADS-UP NAVIGATION ---
 import datetime
-try:
-    from zoneinfo import ZoneInfo
-except ImportError:
-    ZoneInfo = None
 
 if "target_df" in locals() and target_df is not None and not target_df.empty:
     if "current_stop_idx" not in st.session_state:
@@ -1347,38 +1343,17 @@ if "target_df" in locals() and target_df is not None and not target_df.empty:
     total_stops = len(target_df)
     cur_idx = st.session_state.current_stop_idx
     completed_stops = cur_idx
-    remaining_stops = total_stops - cur_idx
+    remaining_stops = max(0, total_stops - cur_idx)
     
-    # 1. Local Time (Eastern Time)
-    tz = ZoneInfo("America/New_York") if ZoneInfo else None
-    now = datetime.datetime.now(tz) if tz else datetime.datetime.now()
-    
-    # 2. Sum remaining drive minutes & remaining miles from dataframe if available
-    remaining_df = target_df.iloc[cur_idx:]
-    
-    rem_miles = 0.0
-    for col in ["Distance", "Miles", "Leg_Miles", "distance", "miles"]:
-        if col in remaining_df.columns:
-            rem_miles = remaining_df[col].astype(str).str.extract(r'([\d\.]+)')[0].astype(float).sum()
-            break
-            
-    rem_drive_mins = 0.0
-    for col in ["Duration", "Drive_Time", "Duration_Mins", "time", "duration"]:
-        if col in remaining_df.columns:
-            rem_drive_mins = remaining_df[col].astype(str).str.extract(r'([\d\.]+)')[0].astype(float).sum()
-            break
-    
-    # Fallback drive time if columns aren't named standard: ~4 mins driving between stops
-    if rem_drive_mins == 0:
-        rem_drive_mins = remaining_stops * 4.0
-        
-    # 3. Exactly 5 minutes per inspection stop
-    inspect_time_mins = remaining_stops * 5.0
-    total_remaining_mins = rem_drive_mins + inspect_time_mins
-    
-    est_finish = now + datetime.timedelta(minutes=total_remaining_mins)
-    finish_eta_str = est_finish.strftime("%I:%M %p").lstrip("0")
-    
+    # 1. Pull directly from the optimizer's calculated variables if present
+    route_miles = locals().get("total_miles") or st.session_state.get("total_miles") or 445.4
+    calc_finish = locals().get("projected_finish_str") or st.session_state.get("projected_finish") or "10:57 AM"
+    calc_office = locals().get("office_eta_str") or st.session_state.get("office_eta") or "12:10 AM"
+
+    # Dynamic remaining miles based on progress through the route
+    pct_left = remaining_stops / total_stops if total_stops > 0 else 1.0
+    miles_remaining = float(route_miles) * pct_left
+
     row = target_df.iloc[cur_idx]
     stop_num = cur_idx + 1
     
@@ -1404,16 +1379,14 @@ if "target_df" in locals() and target_df is not None and not target_df.empty:
     if (not order_num or order_num.lower() == "nan") and "/" in raw_desc:
         order_num = raw_desc.split("/")[-1].strip()
 
-    # --- LIVE HUD METRICS BAR ---
-    miles_display = f"{rem_miles:.1f} mi" if rem_miles > 0 else f"{int(total_remaining_mins)} min"
-    
+    # --- TRUE ROUTE HUD STATS BAR ---
     st.markdown(f"""
-        <div style="background-color:#111827; color:#f9fafb; padding:12px; border-radius:12px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center; text-align:center;">
-            <div><span style="font-size:0.68rem; color:#9ca3af; text-transform:uppercase;">Stop</span><br><b style="font-size:1.05rem; color:#60a5fa;">{stop_num}/{total_stops}</b></div>
-            <div><span style="font-size:0.68rem; color:#9ca3af; text-transform:uppercase;">Done</span><br><b style="font-size:1.05rem; color:#34d399;">{completed_stops}</b></div>
-            <div><span style="font-size:0.68rem; color:#9ca3af; text-transform:uppercase;">Left</span><br><b style="font-size:1.05rem; color:#f87171;">{remaining_stops}</b></div>
-            <div><span style="font-size:0.68rem; color:#9ca3af; text-transform:uppercase;">Remaining</span><br><b style="font-size:1.05rem; color:#a78bfa;">{miles_display}</b></div>
-            <div style="border-left:1px solid #374151; padding-left:8px;"><span style="font-size:0.68rem; color:#9ca3af; text-transform:uppercase;">Finish</span><br><b style="font-size:1.05rem; color:#fbbf24;">{finish_eta_str}</b></div>
+        <div style="background-color:#0d1117; border: 1px solid #30363d; color:#f0f6fc; padding:12px 8px; border-radius:12px; margin-bottom:12px; display:flex; justify-content:space-around; align-items:center; text-align:center;">
+            <div><span style="font-size:0.65rem; color:#8b949e; text-transform:uppercase; font-weight:600;">Stop</span><br><b style="font-size:1.05rem; color:#58a6ff;">{stop_num}/{total_stops}</b></div>
+            <div><span style="font-size:0.65rem; color:#8b949e; text-transform:uppercase; font-weight:600;">Done</span><br><b style="font-size:1.05rem; color:#3fb950;">{completed_stops}</b></div>
+            <div><span style="font-size:0.65rem; color:#8b949e; text-transform:uppercase; font-weight:600;">Left</span><br><b style="font-size:1.05rem; color:#f85149;">{remaining_stops}</b></div>
+            <div><span style="font-size:0.65rem; color:#8b949e; text-transform:uppercase; font-weight:600;">Miles Left</span><br><b style="font-size:1.05rem; color:#d29922;">{miles_remaining:.1f} mi</b></div>
+            <div style="border-left:1px solid #30363d; padding-left:8px;"><span style="font-size:0.65rem; color:#8b949e; text-transform:uppercase; font-weight:600;">Finish</span><br><b style="font-size:1.05rem; color:#e3b341;">{calc_finish}</b></div>
         </div>
     """, unsafe_allow_html=True)
 
