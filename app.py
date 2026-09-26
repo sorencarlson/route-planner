@@ -1300,129 +1300,306 @@ if not master_df.empty:
         gpx_lines.append('  </rte>')
         gpx_lines.append('</gpx>')
         gpx_string = "\n".join(gpx_lines)
-        from datetime import datetime
-        ts_now = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # Clean export filenames with timestamp
+    import datetime
+    edt_tz = datetime.timezone(datetime.timedelta(hours=-4))
+    ts_file = datetime.datetime.now(edt_tz).strftime("%Y%m%d_%H%M%S")
+
+    col_exp1, col_exp2 = st.columns(2)
+
+    with col_exp1:
         st.download_button(
             label="🗺️ Download GPX",
             data=gpx_string,
-            file_name="Route_Export.gpx",
+            file_name=f"Route_{ts_file}.gpx",
             mime="application/gpx+xml",
-            key="dl_btn_gpx",
+            key="master_dl_btn_gpx",
+            use_container_width=True
         )
-# 4. InspectorAde File Export
-    with exp_col4:
+
+    with col_exp2:
         ade_lines = ["OrderNumber,Address,City,State,Zip"]
-        for _, row in target_df.iterrows():
-            order = row.get("Order_Number") or row.get("Work_Order") or row.get("Order") or ""
-            addr = row.get("Address") or row.get("Street") or ""
-            city = row.get("City") or ""
-            state = row.get("State") or ""
-            zip_code = row.get("Zip") or row.get("PostalCode") or ""
+        for _, r in target_df.iterrows():
+            order = str(r.get("Order_Number") or r.get("Work_Order") or r.get("Order") or "").strip()
+            addr = str(r.get("Address") or r.get("Street") or "").strip()
+            city = str(r.get("City") or "").strip()
+            state = str(r.get("State") or "VA").strip()
+            zip_code = str(r.get("Zip") or r.get("PostalCode") or "").strip()
             ade_lines.append(f'"{order}","{addr}","{city}","{state}","{zip_code}"')
-            ade_csv = "\n".join(ade_lines).encode("utf-8")
+        
+        ade_csv_data = "\n".join(ade_lines).encode("utf-8")
         st.download_button(
-            label="Download InspectorAde CSV",
-            data=ade_csv,
-            file_name="InspectorAde_Export.csv",
-            mime="text/csv"
-            )
-# --- PRINTABLE CLIPBOARD MANIFEST ---
-if "target_df" in locals() and target_df is not None and not target_df.empty:
+            label="📄 Download InspectorAde CSV",
+            data=ade_csv_data,
+            file_name=f"InspectorAde_Route_{ts_file}.csv",
+            mime="text/csv",
+            key="master_dl_btn_csv",
+            use_container_width=True
+        )
+
     with st.expander("📋 Open Printable Clipboard Manifest"):
         st.button("Print Manifest", on_click=None, help="Use browser Print (Ctrl+P)")
         st.dataframe(target_df.drop(columns=["Description"], errors="ignore"), use_container_width=True)
-# --- CIRCUIT-STYLE DYNAMIC DRIVER HUD & DECK ---
-import datetime
 
-if "target_df" in locals() and target_df is not None and not target_df.empty:
-    if "current_stop_idx" not in st.session_state:
-        st.session_state.current_stop_idx = 0
+    # OFFLINE-FIRST DRIVER DECK
+    import json
+    import streamlit.components.v1 as components
 
-    total_stops = len(target_df)
-    cur_idx = st.session_state.current_stop_idx
-    completed_stops = cur_idx
-    remaining_stops = max(0, total_stops - cur_idx)
+    stops_payload = []
+    for idx, row in target_df.iterrows():
+        raw_addr = str(row.get("Address") or row.get("Street") or "").strip()
+        raw_desc = str(row.get("Description") or "").strip()
+        if (not raw_addr or raw_addr.lower() == "nan") and raw_desc:
+            addr_val = raw_desc.split("/")[0].strip()
+        else:
+            addr_val = raw_addr or "Property Location"
 
-    # Eastern Time Lock (UTC-4)
-    edt_tz = datetime.timezone(datetime.timedelta(hours=-4))
-    now_edt = datetime.datetime.now(edt_tz)
+        city_val = str(row.get("City") or "").strip()
+        state_val = str(row.get("State") or "VA").strip()
+        zip_val = str(row.get("Zip") or row.get("PostalCode") or "").strip()
 
-    # Route Miles
-    total_route_miles = 445.4
+        loc_parts = [p for p in [city_val, state_val, zip_val] if p and p.lower() != "nan"]
+        city_state_str = ", ".join(loc_parts)
+
+        order_val = str(row.get("Order_Number") or row.get("Work_Order") or row.get("Order") or "").strip()
+        if (not order_val or order_val.lower() == "nan") and "/" in raw_desc:
+            order_val = raw_desc.split("/")[-1].strip()
+
+        notes_val = raw_desc if (raw_desc and raw_desc != addr_val) else ""
+        full_dest_str = f"{addr_val}, {city_state_str}".strip(", ")
+
+        stops_payload.append({
+            "stop_num": idx + 1,
+            "address": addr_val,
+            "city_state": city_state_str,
+            "full_dest": full_dest_str,
+            "order_num": order_val,
+            "notes": notes_val
+        })
+
+    total_miles_val = 445.4
     if "total_miles" in locals() and locals().get("total_miles"):
-        try: total_route_miles = float(locals().get("total_miles"))
+        try: total_miles_val = float(locals().get("total_miles"))
         except: pass
     elif "total_miles" in st.session_state:
-        try: total_route_miles = float(st.session_state.get("total_miles"))
+        try: total_miles_val = float(st.session_state.get("total_miles"))
         except: pass
 
-    pct_left = remaining_stops / total_stops if total_stops > 0 else 0.0
-    miles_left = total_route_miles * pct_left
+    return_leg_miles = 45.0
+    stops_json_str = json.dumps(stops_payload)
 
-    # Circuit Pacing: 42 mph driving + 5 mins on-site buffer
-    drive_mins_left = (miles_left / 42.0) * 60.0
-    onsite_mins_left = remaining_stops * 5.0
-    total_mins_remaining = drive_mins_left + onsite_mins_left
+    deck_html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+        <style>
+            * {{ box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }}
+            body {{ margin: 0; padding: 4px; background-color: #0b0f19; color: #f3f4f6; }}
+            
+            .hud-bar {{
+                display: grid;
+                grid-template-columns: repeat(5, 1fr);
+                background: #111827;
+                border: 1px solid #374151;
+                border-radius: 12px;
+                padding: 10px 4px;
+                margin-bottom: 12px;
+                text-align: center;
+            }}
+            .hud-label {{ font-size: 0.65rem; color: #9ca3af; text-transform: uppercase; font-weight: 700; margin-bottom: 2px; }}
+            .hud-val {{ font-size: 1.05rem; font-weight: 800; }}
+            .c-blue {{ color: #60a5fa; }}
+            .c-green {{ color: #34d399; }}
+            .c-red {{ color: #f87171; }}
+            .c-yellow {{ color: #fbbf24; }}
+            .c-cyan {{ color: #38bdf8; }}
+            .hud-sep {{ border-left: 1px solid #374151; }}
 
-    finish_dt = now_edt + datetime.timedelta(minutes=total_mins_remaining)
-    finish_str = finish_dt.strftime("%I:%M %p").lstrip("0")
+            .card {{
+                background: #1f2937;
+                border: 1px solid #374151;
+                border-radius: 14px;
+                padding: 16px;
+                margin-bottom: 12px;
+                box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+            }}
+            .card-title {{ font-size: 1.35rem; font-weight: 800; color: #ffffff; margin: 0 0 6px 0; line-height: 1.25; }}
+            .card-city {{ font-size: 1.0rem; color: #9ca3af; margin-bottom: 12px; font-weight: 600; }}
+            .card-info-box {{
+                background: #111827;
+                border-radius: 8px;
+                padding: 10px 12px;
+                margin-top: 8px;
+                border-left: 4px solid #3b82f6;
+            }}
+            .info-line {{ font-size: 0.95rem; margin: 4px 0; color: #e5e7eb; }}
+            .info-bold {{ font-weight: 700; color: #93c5fd; }}
 
-    row = target_df.iloc[cur_idx]
-    stop_num = cur_idx + 1
+            .btn-nav {{
+                display: block;
+                width: 100%;
+                background: linear-gradient(135deg, #2563eb, #1d4ed8);
+                color: #ffffff;
+                text-align: center;
+                text-decoration: none;
+                padding: 14px;
+                border-radius: 12px;
+                font-size: 1.15rem;
+                font-weight: 800;
+                margin-bottom: 12px;
+                border: none;
+                cursor: pointer;
+            }}
+            .btn-next {{
+                display: block;
+                width: 100%;
+                background: linear-gradient(135deg, #059669, #10b981);
+                color: #ffffff;
+                padding: 18px;
+                border-radius: 14px;
+                font-size: 1.35rem;
+                font-weight: 900;
+                letter-spacing: 0.5px;
+                border: none;
+                cursor: pointer;
+                box-shadow: 0 4px 14px rgba(16, 185, 129, 0.4);
+                margin-bottom: 10px;
+                text-transform: uppercase;
+            }}
+            .btn-next:active {{ transform: scale(0.98); background: #047857; }}
+            .btn-prev {{
+                display: block;
+                width: 100%;
+                background: #374151;
+                color: #d1d5db;
+                padding: 10px;
+                border-radius: 10px;
+                font-size: 0.95rem;
+                font-weight: 600;
+                border: none;
+                cursor: pointer;
+            }}
+        </style>
+    </head>
+    <body>
 
-    raw_addr = str(row.get("Address") or row.get("Street") or "").strip()
-    raw_desc = str(row.get("Description") or "").strip()
-    if (not raw_addr or raw_addr.lower() == "nan") and raw_desc:
-        addr = raw_desc.split("/")[0].strip()
-    else:
-        addr = raw_addr or "Stop Location"
-
-    city = str(row.get("City") or "").strip()
-    state = str(row.get("State") or "").strip()
-    zip_c = str(row.get("Zip") or row.get("PostalCode") or "").strip()
-    loc_parts = [p for p in [city, state, zip_c] if p and p.lower() != "nan"]
-    city_state = ", ".join(loc_parts)
-    full_dest = f"{addr}, {city_state}".strip(", ")
-
-    order_num = str(row.get("Order_Number") or row.get("Work_Order") or row.get("Order") or "").strip()
-    if (not order_num or order_num.lower() == "nan") and "/" in raw_desc:
-        order_num = raw_desc.split("/")[-1].strip()
-
-    # Dynamic HUD
-    st.markdown(f"""
-        <div style="background-color:#0d1117; border:1px solid #30363d; color:#f0f6fc; padding:12px; border-radius:12px; margin-bottom:12px; display:flex; justify-content:space-around; align-items:center; text-align:center;">
-            <div><span style="font-size:0.65rem; color:#8b949e; text-transform:uppercase; font-weight:600;">Stop</span><br><b style="font-size:1.05rem; color:#58a6ff;">{stop_num}/{total_stops}</b></div>
-            <div><span style="font-size:0.65rem; color:#8b949e; text-transform:uppercase; font-weight:600;">Done</span><br><b style="font-size:1.05rem; color:#3fb950;">{completed_stops}</b></div>
-            <div><span style="font-size:0.65rem; color:#8b949e; text-transform:uppercase; font-weight:600;">Left</span><br><b style="font-size:1.05rem; color:#f85149;">{remaining_stops}</b></div>
-            <div><span style="font-size:0.65rem; color:#8b949e; text-transform:uppercase; font-weight:600;">Miles Left</span><br><b style="font-size:1.05rem; color:#d29922;">{miles_left:.0f} mi</b></div>
-            <div style="border-left:1px solid #30363d; padding-left:8px;"><span style="font-size:0.65rem; color:#8b949e; text-transform:uppercase; font-weight:600;">Est. Finish</span><br><b style="font-size:1.15rem; color:#38bdf8;">{finish_str}</b></div>
+        <div class="hud-bar">
+            <div>
+                <div class="hud-label">Stop</div>
+                <div class="hud-val c-blue" id="hud-stop">1/--</div>
+            </div>
+            <div>
+                <div class="hud-label">Done</div>
+                <div class="hud-val c-green" id="hud-done">0</div>
+            </div>
+            <div>
+                <div class="hud-label">Left</div>
+                <div class="hud-val c-red" id="hud-left">--</div>
+            </div>
+            <div>
+                <div class="hud-label">Miles</div>
+                <div class="hud-val c-yellow" id="hud-miles">--</div>
+            </div>
+            <div class="hud-sep">
+                <div class="hud-label">Finish</div>
+                <div class="hud-val c-cyan" id="hud-finish">--:--</div>
+            </div>
         </div>
-    """, unsafe_allow_html=True)
 
-    # Active Card
-    with st.container(border=True):
-        st.markdown(f"### {addr}")
-        if city_state:
-            st.caption(f"📍 {city_state}")
-        if order_num and order_num.lower() != "nan":
-            st.markdown(f"**Order #:** `{order_num}`")
-        if raw_desc and raw_desc != addr:
-            st.markdown(f"**Notes:** {raw_desc}")
+        <div class="card">
+            <div class="card-title" id="disp-addr">Loading...</div>
+            <div class="card-city" id="disp-city"></div>
+            
+            <div class="card-info-box">
+                <div class="info-line"><span class="info-bold">Work Order:</span> <span id="disp-order">--</span></div>
+                <div class="info-line" id="disp-notes-row" style="display:none;"><span class="info-bold">Notes:</span> <span id="disp-notes"></span></div>
+            </div>
+        </div>
 
-    # Navigation Controls
-    col_prev, col_next = st.columns(2)
-    with col_prev:
-        if st.button("⬅️ Previous Stop", use_container_width=True, disabled=(cur_idx == 0)):
-            st.session_state.current_stop_idx -= 1
-            st.rerun()
-    with col_next:
-        if st.button("✅ Next Stop", type="primary", use_container_width=True, disabled=(cur_idx >= total_stops - 1)):
-            st.session_state.current_stop_idx += 1
-            st.rerun()
+        <a id="nav-link" href="#" target="_blank" class="btn-nav">📍 Open in Google Maps</a>
+        <button class="btn-next" onclick="nextStop()">Next Stop ⏩</button>
+        <button class="btn-prev" onclick="prevStop()">⬅️ Previous Stop</button>
 
-    # Embedded Live Google Map
-    embed_url = f"https://maps.google.com/maps?q={full_dest.replace(' ', '+')}&output=embed"
-    st.markdown(
-        f'<iframe width="100%" height="420" frameborder="0" style="border:0; border-radius:12px; margin-top:12px;" src="{embed_url}" allowfullscreen></iframe>',
-        unsafe_allow_html=True
-    )
+        <script>
+            const stops = {stops_json_str};
+            const totalStops = stops.length;
+            const totalRouteMiles = {total_miles_val};
+            const returnLegMiles = {return_leg_miles};
+
+            let curIdx = parseInt(localStorage.getItem("cfs_route_idx") || "0", 10);
+            if (curIdx >= totalStops) curIdx = totalStops - 1;
+            if (curIdx < 0) curIdx = 0;
+
+            function formatTime(dt) {{
+                let hrs = dt.getHours();
+                let mins = dt.getMinutes();
+                let ampm = hrs >= 12 ? 'PM' : 'AM';
+                hrs = hrs % 12;
+                hrs = hrs ? hrs : 12;
+                mins = mins < 10 ? '0' + mins : mins;
+                return hrs + ':' + mins + ' ' + ampm;
+            }}
+
+            function updateDeck() {{
+                const s = stops[curIdx];
+                const done = curIdx;
+                const left = totalStops - curIdx;
+
+                document.getElementById("hud-stop").innerText = (curIdx + 1) + "/" + totalStops;
+                document.getElementById("hud-done").innerText = done;
+                document.getElementById("hud-left").innerText = left;
+
+                document.getElementById("disp-addr").innerText = s.address;
+                document.getElementById("disp-city").innerText = s.city_state ? ("📍 " + s.city_state) : "";
+                document.getElementById("disp-order").innerText = s.order_num || "N/A";
+                
+                if (s.notes) {{
+                    document.getElementById("disp-notes").innerText = s.notes;
+                    document.getElementById("disp-notes-row").style.display = "block";
+                }} else {{
+                    document.getElementById("disp-notes-row").style.display = "none";
+                }}
+
+                const mapsUrl = "https://www.google.com/maps/dir/?api=1&destination=" + encodeURIComponent(s.full_dest) + "&travelmode=driving";
+                document.getElementById("nav-link").href = mapsUrl;
+
+                const pctRemaining = totalStops > 0 ? (left / totalStops) : 0;
+                const routeMilesLeft = totalRouteMiles * pctRemaining;
+                document.getElementById("hud-miles").innerText = Math.round(routeMilesLeft) + " mi";
+
+                const driveMins = (routeMilesLeft / 42.0) * 60.0;
+                const onsiteMins = left * 5.0;
+                const returnMins = (returnLegMiles / 48.0) * 60.0; 
+                
+                const totalMinsNeeded = driveMins + onsiteMins + returnMins;
+
+                const now = new Date();
+                const finishDate = new Date(now.getTime() + totalMinsNeeded * 60000);
+                document.getElementById("hud-finish").innerText = formatTime(finishDate);
+
+                localStorage.setItem("cfs_route_idx", curIdx.toString());
+            }}
+
+            function nextStop() {{
+                if (curIdx < totalStops - 1) {{
+                    curIdx++;
+                    updateDeck();
+                }}
+            }}
+
+            function prevStop() {{
+                if (curIdx > 0) {{
+                    curIdx--;
+                    updateDeck();
+                }}
+            }}
+
+            updateDeck();
+            setInterval(updateDeck, 15000);
+        </script>
+    </body>
+    </html>
+    """
+
+    components.html(deck_html, height=540, scrolling=False)
