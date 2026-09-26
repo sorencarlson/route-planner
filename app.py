@@ -1323,15 +1323,26 @@ if not master_df.empty:
     with col_exp2:
         ade_lines = ["OrderNumber,Address,City,State,Zip"]
         for _, r in target_df.iterrows():
-            # Column A has "Address / OrderNumber"
-            name_col = str(r.get("Name") or "").strip()
-            order = str(r.get("Order_Number") or r.get("Work_Order") or r.get("Order") or "").strip()
-            if not order and "/" in name_col:
-                order = name_col.split("/")[-1].strip()
+            order = ""
+            for k in ["Order_Number", "Work_Order", "Order", "Inspection ID", "Inspection_ID"]:
+                if k in r and str(r.get(k)).strip() and str(r.get(k)).lower() != "nan":
+                    order = str(r.get(k)).strip()
+                    break
+            
+            raw_name = str(r.get("Name") or r.get("Description") or "").strip()
+            if not order and "/" in raw_name:
+                order = raw_name.split("/")[-1].strip()
 
-            addr = str(r.get("Address1") or r.get("Address") or r.get("Street") or "").strip()
-            city = str(r.get("City") or r.get("Town") or "").strip()
-            state = str(r.get("State") or "").strip()
+            addr = ""
+            for k in ["Address1", "Address", "Full Address", "Street", "Property Address"]:
+                if k in r and str(r.get(k)).strip() and str(r.get(k)).lower() != "nan":
+                    addr = str(r.get(k)).strip()
+                    break
+            if not addr and "/" in raw_name:
+                addr = raw_name.split("/")[0].strip()
+
+            city = str(r.get("City") or r.get("Town") or r.get("Property City") or "").strip()
+            state = str(r.get("State") or r.get("Property State") or "").strip()
             zip_code = str(r.get("Zip") or r.get("PostalCode") or "").strip()
             
             if order and order.lower() not in ["start", "end", "depot", "base", "home"]:
@@ -1351,7 +1362,7 @@ if not master_df.empty:
         st.button("Print Manifest", on_click=None, help="Use browser Print (Ctrl+P)")
         st.dataframe(target_df.drop(columns=["Description"], errors="ignore"), use_container_width=True)
 
-    # DYNAMIC MILEAGE DIRECT FROM DESKTOP TABLE
+    # DIRECT DISTANCE EXTRACTION
     total_miles_val = 0.0
     dist_cols = [c for c in target_df.columns if any(m in c.lower() for m in ["mile", "dist", "cum"])]
     if dist_cols:
@@ -1373,45 +1384,58 @@ if not master_df.empty:
     if not total_miles_val or total_miles_val > 350:
         total_miles_val = round(len(target_df) * 2.1 + 8.0, 1)
 
-    # CLEAN PAYLOAD GENERATION
+    # PAYLOAD BUILDER WITH DIRECT COLUMN EXTRACTION
     stops_payload = []
     depot_keywords = ["start", "end", "depot", "origin", "destination", "home", "base", "arlington"]
     total_rows = len(target_df)
 
     for idx, row in target_df.iterrows():
-        # Column A: Full Name with code for display
-        name_val = str(row.get("Name") or "").strip()
+        raw_name = str(row.get("Name") or row.get("Description") or "").strip()
         
-        # Column B: Clean Street Address
-        addr_val = str(row.get("Address1") or row.get("Address") or row.get("Street") or "").strip()
-        if (not addr_val or addr_val.lower() == "nan") and "/" in name_val:
-            addr_val = name_val.split("/")[0].strip()
+        addr_val = ""
+        for k in ["Address1", "Address", "Full Address", "Street", "Property Address"]:
+            v = str(row.get(k) or "").strip()
+            if v and v.lower() != "nan":
+                addr_val = v
+                break
+        
+        if not addr_val and "/" in raw_name:
+            addr_val = raw_name.split("/")[0].strip()
+        elif not addr_val:
+            addr_val = raw_name or "Property Location"
 
-        # Columns D & E: Exact City and State (NO FALLBACKS)
-        city_val = str(row.get("City") or row.get("Town") or "").strip()
-        state_val = str(row.get("State") or "").strip()
+        city_val = str(row.get("City") or row.get("Town") or row.get("Property City") or "").strip()
+        state_val = str(row.get("State") or row.get("Property State") or "").strip()
         zip_val = str(row.get("Zip") or row.get("PostalCode") or "").strip()
+
+        if (not city_val or city_val.lower() == "nan") and ("," in addr_val):
+            parts = [p.strip() for p in addr_val.split(",")]
+            if len(parts) >= 2:
+                city_val = parts[1]
+                if len(parts) >= 3 and not state_val:
+                    state_val = parts[2].split(" ")[0]
 
         city_clean = "" if city_val.lower() == "nan" else city_val
         state_clean = "" if state_val.lower() == "nan" else state_val
         zip_clean = "" if zip_val.lower() == "nan" else zip_val
 
-        # Display label for city/state
         loc_parts = [p for p in [city_clean, state_clean, zip_clean] if p]
         city_state_str = ", ".join(loc_parts)
 
-        # Work Order Number parsed from Column A or Order column
-        order_val = str(row.get("Order_Number") or row.get("Work_Order") or row.get("Order") or "").strip()
-        if (not order_val or order_val.lower() == "nan") and "/" in name_val:
-            order_val = name_val.split("/")[-1].strip()
+        order_val = ""
+        for k in ["Order_Number", "Work_Order", "Order", "Inspection ID", "Inspection_ID"]:
+            v = str(row.get(k) or "").strip()
+            if v and v.lower() != "nan":
+                order_val = v
+                break
+        if not order_val and "/" in raw_name:
+            order_val = raw_name.split("/")[-1].strip()
 
-        # Destination query for Google Maps (STRICTLY Columns B, D, E)
         nav_parts = [p for p in [addr_val, city_clean, state_clean, zip_clean] if p]
         nav_query_str = ", ".join(nav_parts)
 
-        # Depot checking
         is_depot = False
-        check_text = f"{addr_val} {order_val} {name_val}".lower()
+        check_text = f"{addr_val} {order_val} {raw_name}".lower()
         if idx == 0 or idx == total_rows - 1:
             if any(k in check_text for k in depot_keywords):
                 is_depot = True
@@ -1422,7 +1446,6 @@ if not master_df.empty:
             "city_state": city_state_str,
             "full_dest": nav_query_str,
             "order_num": order_val,
-            "display_name": name_val,
             "is_depot": is_depot,
             "is_finish_leg": (idx == total_rows - 1 and is_depot)
         })
@@ -1438,7 +1461,6 @@ if not master_df.empty:
     total_inspections = insp_count
     stops_json_str = json.dumps(stops_payload)
 
-    # OFFLINE-FIRST DRIVER DECK
     deck_html = f"""
     <!DOCTYPE html>
     <html>
@@ -1565,7 +1587,7 @@ if not master_df.empty:
                 <div class="hud-val c-yellow" id="hud-miles">--</div>
             </div>
             <div class="hud-sep">
-                <div class="hud-label">Finish</div>
+                <div class="hud-label">Return</div>
                 <div class="hud-val c-cyan" id="hud-finish">--:--</div>
             </div>
         </div>
@@ -1629,11 +1651,10 @@ if not master_df.empty:
                 document.getElementById("hud-done").innerText = inspsDone;
                 document.getElementById("hud-left").innerText = inspsLeft;
 
-                document.getElementById("disp-addr").innerText = s.address;
+                document.getElementById("disp-addr").innerText = s.address || "Property Address";
                 document.getElementById("disp-city").innerText = s.city_state ? ("📍 " + s.city_state) : "";
                 document.getElementById("disp-order").innerText = s.order_num || (s.is_depot ? "Base Depot" : "N/A");
 
-                // Clean destination strictly from B, D, and E (Address1 + City + State)
                 const mapsUrl = "https://www.google.com/maps/dir/?api=1&destination=" + encodeURIComponent(s.full_dest) + "&travelmode=driving";
                 document.getElementById("nav-link").href = mapsUrl;
 
@@ -1651,8 +1672,7 @@ if not master_df.empty:
                 document.getElementById("hud-miles").innerText = Math.round(routeMilesLeft) + " mi";
 
                 const driveMins = (routeMilesLeft / 25.0) * 60.0;
-                const onsiteMins = inspsLeft * 5.0;
-                const totalMinsNeeded = driveMins + onsiteMins;
+                const totalMinsNeeded = driveMins;
 
                 const now = new Date();
                 const finishDate = new Date(now.getTime() + totalMinsNeeded * 60000);
