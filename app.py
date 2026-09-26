@@ -1300,8 +1300,14 @@ if not master_df.empty:
         gpx_lines.append('  </rte>')
         gpx_lines.append('</gpx>')
         gpx_string = "\n".join(gpx_lines)
-        # Clean export filenames with timestamp
+       # ====================================================
+    # MASTER EXPORT GENERATION & PRODUCTION DRIVER DECK
+    # ====================================================
+    import json
     import datetime
+    import streamlit.components.v1 as components
+
+    # 1. CLEAN FILE EXPORTS (GPX & INSPECTORADE CSV)
     edt_tz = datetime.timezone(datetime.timedelta(hours=-4))
     ts_file = datetime.datetime.now(edt_tz).strftime("%Y%m%d_%H%M%S")
 
@@ -1325,7 +1331,10 @@ if not master_df.empty:
             city = str(r.get("City") or "").strip()
             state = str(r.get("State") or "VA").strip()
             zip_code = str(r.get("Zip") or r.get("PostalCode") or "").strip()
-            ade_lines.append(f'"{order}","{addr}","{city}","{state}","{zip_code}"')
+            
+            # Skip bare start/end markers in work order exports
+            if order and order.lower() not in ["start", "end", "depot", "base", "home"]:
+                ade_lines.append(f'"{order}","{addr}","{city}","{state}","{zip_code}"')
         
         ade_csv_data = "\n".join(ade_lines).encode("utf-8")
         st.download_button(
@@ -1341,22 +1350,65 @@ if not master_df.empty:
         st.button("Print Manifest", on_click=None, help="Use browser Print (Ctrl+P)")
         st.dataframe(target_df.drop(columns=["Description"], errors="ignore"), use_container_width=True)
 
-    # OFFLINE-FIRST DRIVER DECK
-    import json
-    import streamlit.components.v1 as components
+    # ----------------------------------------------------
+    # 2. DYNAMIC DISTANCE EXTRACTION FROM ROUTE ENGINE
+    # ----------------------------------------------------
+    total_miles_val = 0.0
+    dist_cols = [c for c in target_df.columns if any(m in c.lower() for m in ["mile", "dist", "cum"])]
+    if dist_cols:
+        try:
+            # Grab cumulative miles from final row (e.g., 48.87 mi)
+            val = target_df[dist_cols[0]].dropna().iloc[-1]
+            total_miles_val = float(val)
+        except Exception:
+            pass
 
+    if not total_miles_val or total_miles_val <= 0:
+        for k in ["total_miles", "route_miles", "total_distance"]:
+            if k in locals() and locals().get(k):
+                try: total_miles_val = float(locals().get(k)); break
+                except: pass
+            elif k in st.session_state and st.session_state.get(k):
+                try: total_miles_val = float(st.session_state.get(k)); break
+                except: pass
+
+    # Fallback only if no route distance was recorded anywhere
+    if not total_miles_val or total_miles_val > 350:
+        total_miles_val = round(len(target_df) * 2.1 + 8.0, 1)
+
+    # ----------------------------------------------------
+    # 3. STOP DATA NORMALIZATION (WITH CITY & DEPOT DETECTION)
+    # ----------------------------------------------------
     stops_payload = []
+    depot_keywords = ["start", "end", "depot", "origin", "destination", "home", "office", "base", "arlington"]
+    total_rows = len(target_df)
+
     for idx, row in target_df.iterrows():
         raw_addr = str(row.get("Address") or row.get("Street") or "").strip()
         raw_desc = str(row.get("Description") or "").strip()
+        
+        # Address extraction
         if (not raw_addr or raw_addr.lower() == "nan") and raw_desc:
             addr_val = raw_desc.split("/")[0].strip()
         else:
             addr_val = raw_addr or "Property Location"
 
-        city_val = str(row.get("City") or "").strip()
-        state_val = str(row.get("State") or "VA").strip()
-        zip_val = str(row.get("Zip") or row.get("PostalCode") or "").strip()
+        # City / State / Zip robust detection
+        city_val = str(row.get("City") or row.get("Town") or row.get("Property City") or "").strip()
+        state_val = str(row.get("State") or row.get("Property State") or "").strip()
+        zip_val = str(row.get("Zip") or row.get("PostalCode") or row.get("Zipcode") or "").strip()
+
+        # Parse inline address if city is missing (e.g. "Washington, DC 20011")
+        if (not city_val or city_val.lower() == "nan") and ("," in addr_val):
+            parts = [p.strip() for p in addr_val.split(",")]
+            if len(parts) >= 2:
+                addr_val = parts[0]
+                city_val = parts[1]
+                if len(parts) >= 3:
+                    state_val = parts[2]
+
+        if not state_val or state_val.lower() == "nan":
+            state_val = "VA"
 
         loc_parts = [p for p in [city_val, state_val, zip_val] if p and p.lower() != "nan"]
         city_state_str = ", ".join(loc_parts)
@@ -1368,26 +1420,39 @@ if not master_df.empty:
         notes_val = raw_desc if (raw_desc and raw_desc != addr_val) else ""
         full_dest_str = f"{addr_val}, {city_state_str}".strip(", ")
 
+        # Depot checking
+        is_depot = False
+        check_text = f"{addr_val} {order_val} {notes_val}".lower()
+        if idx == 0 or idx == total_rows - 1:
+            if any(k in check_text for k in depot_keywords):
+                is_depot = True
+
         stops_payload.append({
-            "stop_num": idx + 1,
+            "row_idx": idx,
             "address": addr_val,
             "city_state": city_state_str,
             "full_dest": full_dest_str,
             "order_num": order_val,
-            "notes": notes_val
+            "notes": notes_val,
+            "is_depot": is_depot,
+            "is_finish_leg": (idx == total_rows - 1 and is_depot)
         })
 
-    total_miles_val = 445.4
-    if "total_miles" in locals() and locals().get("total_miles"):
-        try: total_miles_val = float(locals().get("total_miles"))
-        except: pass
-    elif "total_miles" in st.session_state:
-        try: total_miles_val = float(st.session_state.get("total_miles"))
-        except: pass
+    # Renumber inspection counts excluding base stops
+    insp_count = 0
+    for s in stops_payload:
+        if not s["is_depot"]:
+            insp_count += 1
+            s["insp_num"] = insp_count
+        else:
+            s["insp_num"] = 0
 
-    return_leg_miles = 45.0
+    total_inspections = insp_count
     stops_json_str = json.dumps(stops_payload)
 
+    # ----------------------------------------------------
+    # 4. EMBEDDED OFFLINE DRIVER DECK
+    # ----------------------------------------------------
     deck_html = f"""
     <!DOCTYPE html>
     <html>
@@ -1424,6 +1489,18 @@ if not master_df.empty:
                 margin-bottom: 12px;
                 box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
             }}
+            .card-badge {{
+                display: inline-block;
+                padding: 3px 8px;
+                font-size: 0.75rem;
+                font-weight: 800;
+                border-radius: 6px;
+                margin-bottom: 8px;
+                text-transform: uppercase;
+            }}
+            .badge-inspection {{ background: #1e3a8a; color: #93c5fd; }}
+            .badge-depot {{ background: #4b5563; color: #f3f4f6; }}
+
             .card-title {{ font-size: 1.35rem; font-weight: 800; color: #ffffff; margin: 0 0 6px 0; line-height: 1.25; }}
             .card-city {{ font-size: 1.0rem; color: #9ca3af; margin-bottom: 12px; font-weight: 600; }}
             .card-info-box {{
@@ -1508,6 +1585,7 @@ if not master_df.empty:
         </div>
 
         <div class="card">
+            <span class="card-badge" id="disp-badge">Inspection Stop</span>
             <div class="card-title" id="disp-addr">Loading...</div>
             <div class="card-city" id="disp-city"></div>
             
@@ -1518,17 +1596,18 @@ if not master_df.empty:
         </div>
 
         <a id="nav-link" href="#" target="_blank" class="btn-nav">📍 Open in Google Maps</a>
-        <button class="btn-next" onclick="nextStop()">Next Stop ⏩</button>
+        <button id="btn-next-action" class="btn-next" onclick="nextStop()">Next Stop ⏩</button>
         <button class="btn-prev" onclick="prevStop()">⬅️ Previous Stop</button>
 
         <script>
             const stops = {stops_json_str};
-            const totalStops = stops.length;
+            const totalRows = stops.length;
+            const totalInspections = {total_inspections};
             const totalRouteMiles = {total_miles_val};
-            const returnLegMiles = {return_leg_miles};
 
+            // Retrieve position from phone flash memory
             let curIdx = parseInt(localStorage.getItem("cfs_route_idx") || "0", 10);
-            if (curIdx >= totalStops) curIdx = totalStops - 1;
+            if (curIdx >= totalRows) curIdx = totalRows - 1;
             if (curIdx < 0) curIdx = 0;
 
             function formatTime(dt) {{
@@ -1543,16 +1622,32 @@ if not master_df.empty:
 
             function updateDeck() {{
                 const s = stops[curIdx];
-                const done = curIdx;
-                const left = totalStops - curIdx;
 
-                document.getElementById("hud-stop").innerText = (curIdx + 1) + "/" + totalStops;
-                document.getElementById("hud-done").innerText = done;
-                document.getElementById("hud-left").innerText = left;
+                let inspsDone = 0;
+                let inspsLeft = 0;
+                for (let i = 0; i < totalRows; i++) {{
+                    if (!stops[i].is_depot) {{
+                        if (i < curIdx) inspsDone++;
+                        else inspsLeft++;
+                    }}
+                }}
+
+                if (s.is_depot) {{
+                    document.getElementById("hud-stop").innerText = s.is_finish_leg ? "END" : "START";
+                    document.getElementById("disp-badge").className = "card-badge badge-depot";
+                    document.getElementById("disp-badge").innerText = s.is_finish_leg ? "🏁 RETURN TO BASE" : "DEPARTURE BASE";
+                }} else {{
+                    document.getElementById("hud-stop").innerText = s.insp_num + "/" + totalInspections;
+                    document.getElementById("disp-badge").className = "card-badge badge-inspection";
+                    document.getElementById("disp-badge").innerText = "INSPECTION #" + s.insp_num + " OF " + totalInspections;
+                }}
+
+                document.getElementById("hud-done").innerText = inspsDone;
+                document.getElementById("hud-left").innerText = inspsLeft;
 
                 document.getElementById("disp-addr").innerText = s.address;
                 document.getElementById("disp-city").innerText = s.city_state ? ("📍 " + s.city_state) : "";
-                document.getElementById("disp-order").innerText = s.order_num || "N/A";
+                document.getElementById("disp-order").innerText = s.order_num || (s.is_depot ? "Base Depot" : "N/A");
                 
                 if (s.notes) {{
                     document.getElementById("disp-notes").innerText = s.notes;
@@ -1561,18 +1656,29 @@ if not master_df.empty:
                     document.getElementById("disp-notes-row").style.display = "none";
                 }}
 
+                // Force Full Street + City + State + Zip into Navigation Intent
                 const mapsUrl = "https://www.google.com/maps/dir/?api=1&destination=" + encodeURIComponent(s.full_dest) + "&travelmode=driving";
                 document.getElementById("nav-link").href = mapsUrl;
 
-                const pctRemaining = totalStops > 0 ? (left / totalStops) : 0;
+                // Adjust button label for final base return
+                const btnNext = document.getElementById("btn-next-action");
+                if (curIdx === totalRows - 2 && stops[totalRows - 1].is_depot) {{
+                    btnNext.innerText = "Finish & Return to Base 🏁";
+                }} else if (curIdx >= totalRows - 1) {{
+                    btnNext.innerText = "Route Complete ✅";
+                }} else {{
+                    btnNext.innerText = "Next Stop ⏩";
+                }}
+
+                // True remaining route mileage calculation
+                const pctRemaining = totalRows > 1 ? ((totalRows - 1 - curIdx) / (totalRows - 1)) : 0;
                 const routeMilesLeft = totalRouteMiles * pctRemaining;
                 document.getElementById("hud-miles").innerText = Math.round(routeMilesLeft) + " mi";
 
-                const driveMins = (routeMilesLeft / 42.0) * 60.0;
-                const onsiteMins = left * 5.0;
-                const returnMins = (returnLegMiles / 48.0) * 60.0; 
-                
-                const totalMinsNeeded = driveMins + onsiteMins + returnMins;
+                // Pacing: 25 mph urban driving pace + 5 min onsite per remaining inspection
+                const driveMins = (routeMilesLeft / 25.0) * 60.0;
+                const onsiteMins = inspsLeft * 5.0;
+                const totalMinsNeeded = driveMins + onsiteMins;
 
                 const now = new Date();
                 const finishDate = new Date(now.getTime() + totalMinsNeeded * 60000);
@@ -1582,7 +1688,7 @@ if not master_df.empty:
             }}
 
             function nextStop() {{
-                if (curIdx < totalStops - 1) {{
+                if (curIdx < totalRows - 1) {{
                     curIdx++;
                     updateDeck();
                 }}
