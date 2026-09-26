@@ -1300,14 +1300,11 @@ if not master_df.empty:
         gpx_lines.append('  </rte>')
         gpx_lines.append('</gpx>')
         gpx_string = "\n".join(gpx_lines)
-       # ====================================================
-    # MASTER EXPORT GENERATION & PRODUCTION DRIVER DECK
-    # ====================================================
+     # Clean export filenames with timestamp
     import json
     import datetime
     import streamlit.components.v1 as components
 
-    # 1. CLEAN FILE EXPORTS (GPX & INSPECTORADE CSV)
     edt_tz = datetime.timezone(datetime.timedelta(hours=-4))
     ts_file = datetime.datetime.now(edt_tz).strftime("%Y%m%d_%H%M%S")
 
@@ -1326,13 +1323,17 @@ if not master_df.empty:
     with col_exp2:
         ade_lines = ["OrderNumber,Address,City,State,Zip"]
         for _, r in target_df.iterrows():
+            # Column A has "Address / OrderNumber"
+            name_col = str(r.get("Name") or "").strip()
             order = str(r.get("Order_Number") or r.get("Work_Order") or r.get("Order") or "").strip()
-            addr = str(r.get("Address") or r.get("Street") or "").strip()
-            city = str(r.get("City") or "").strip()
-            state = str(r.get("State") or "VA").strip()
+            if not order and "/" in name_col:
+                order = name_col.split("/")[-1].strip()
+
+            addr = str(r.get("Address1") or r.get("Address") or r.get("Street") or "").strip()
+            city = str(r.get("City") or r.get("Town") or "").strip()
+            state = str(r.get("State") or "").strip()
             zip_code = str(r.get("Zip") or r.get("PostalCode") or "").strip()
             
-            # Skip bare start/end markers in work order exports
             if order and order.lower() not in ["start", "end", "depot", "base", "home"]:
                 ade_lines.append(f'"{order}","{addr}","{city}","{state}","{zip_code}"')
         
@@ -1350,14 +1351,11 @@ if not master_df.empty:
         st.button("Print Manifest", on_click=None, help="Use browser Print (Ctrl+P)")
         st.dataframe(target_df.drop(columns=["Description"], errors="ignore"), use_container_width=True)
 
-    # ----------------------------------------------------
-    # 2. DYNAMIC DISTANCE EXTRACTION FROM ROUTE ENGINE
-    # ----------------------------------------------------
+    # DYNAMIC MILEAGE DIRECT FROM DESKTOP TABLE
     total_miles_val = 0.0
     dist_cols = [c for c in target_df.columns if any(m in c.lower() for m in ["mile", "dist", "cum"])]
     if dist_cols:
         try:
-            # Grab cumulative miles from final row (e.g., 48.87 mi)
             val = target_df[dist_cols[0]].dropna().iloc[-1]
             total_miles_val = float(val)
         except Exception:
@@ -1372,57 +1370,48 @@ if not master_df.empty:
                 try: total_miles_val = float(st.session_state.get(k)); break
                 except: pass
 
-    # Fallback only if no route distance was recorded anywhere
     if not total_miles_val or total_miles_val > 350:
         total_miles_val = round(len(target_df) * 2.1 + 8.0, 1)
 
-    # ----------------------------------------------------
-    # 3. STOP DATA NORMALIZATION (WITH CITY & DEPOT DETECTION)
-    # ----------------------------------------------------
+    # CLEAN PAYLOAD GENERATION
     stops_payload = []
-    depot_keywords = ["start", "end", "depot", "origin", "destination", "home", "office", "base", "arlington"]
+    depot_keywords = ["start", "end", "depot", "origin", "destination", "home", "base", "arlington"]
     total_rows = len(target_df)
 
     for idx, row in target_df.iterrows():
-        raw_addr = str(row.get("Address") or row.get("Street") or "").strip()
-        raw_desc = str(row.get("Description") or "").strip()
+        # Column A: Full Name with code for display
+        name_val = str(row.get("Name") or "").strip()
         
-        # Address extraction
-        if (not raw_addr or raw_addr.lower() == "nan") and raw_desc:
-            addr_val = raw_desc.split("/")[0].strip()
-        else:
-            addr_val = raw_addr or "Property Location"
+        # Column B: Clean Street Address
+        addr_val = str(row.get("Address1") or row.get("Address") or row.get("Street") or "").strip()
+        if (not addr_val or addr_val.lower() == "nan") and "/" in name_val:
+            addr_val = name_val.split("/")[0].strip()
 
-        # City / State / Zip robust detection
-        city_val = str(row.get("City") or row.get("Town") or row.get("Property City") or "").strip()
-        state_val = str(row.get("State") or row.get("Property State") or "").strip()
-        zip_val = str(row.get("Zip") or row.get("PostalCode") or row.get("Zipcode") or "").strip()
+        # Columns D & E: Exact City and State (NO FALLBACKS)
+        city_val = str(row.get("City") or row.get("Town") or "").strip()
+        state_val = str(row.get("State") or "").strip()
+        zip_val = str(row.get("Zip") or row.get("PostalCode") or "").strip()
 
-        # Parse inline address if city is missing (e.g. "Washington, DC 20011")
-        if (not city_val or city_val.lower() == "nan") and ("," in addr_val):
-            parts = [p.strip() for p in addr_val.split(",")]
-            if len(parts) >= 2:
-                addr_val = parts[0]
-                city_val = parts[1]
-                if len(parts) >= 3:
-                    state_val = parts[2]
+        city_clean = "" if city_val.lower() == "nan" else city_val
+        state_clean = "" if state_val.lower() == "nan" else state_val
+        zip_clean = "" if zip_val.lower() == "nan" else zip_val
 
-        if not state_val or state_val.lower() == "nan":
-            state_val = "VA"
-
-        loc_parts = [p for p in [city_val, state_val, zip_val] if p and p.lower() != "nan"]
+        # Display label for city/state
+        loc_parts = [p for p in [city_clean, state_clean, zip_clean] if p]
         city_state_str = ", ".join(loc_parts)
 
+        # Work Order Number parsed from Column A or Order column
         order_val = str(row.get("Order_Number") or row.get("Work_Order") or row.get("Order") or "").strip()
-        if (not order_val or order_val.lower() == "nan") and "/" in raw_desc:
-            order_val = raw_desc.split("/")[-1].strip()
+        if (not order_val or order_val.lower() == "nan") and "/" in name_val:
+            order_val = name_val.split("/")[-1].strip()
 
-        notes_val = raw_desc if (raw_desc and raw_desc != addr_val) else ""
-        full_dest_str = f"{addr_val}, {city_state_str}".strip(", ")
+        # Destination query for Google Maps (STRICTLY Columns B, D, E)
+        nav_parts = [p for p in [addr_val, city_clean, state_clean, zip_clean] if p]
+        nav_query_str = ", ".join(nav_parts)
 
         # Depot checking
         is_depot = False
-        check_text = f"{addr_val} {order_val} {notes_val}".lower()
+        check_text = f"{addr_val} {order_val} {name_val}".lower()
         if idx == 0 or idx == total_rows - 1:
             if any(k in check_text for k in depot_keywords):
                 is_depot = True
@@ -1431,14 +1420,13 @@ if not master_df.empty:
             "row_idx": idx,
             "address": addr_val,
             "city_state": city_state_str,
-            "full_dest": full_dest_str,
+            "full_dest": nav_query_str,
             "order_num": order_val,
-            "notes": notes_val,
+            "display_name": name_val,
             "is_depot": is_depot,
             "is_finish_leg": (idx == total_rows - 1 and is_depot)
         })
 
-    # Renumber inspection counts excluding base stops
     insp_count = 0
     for s in stops_payload:
         if not s["is_depot"]:
@@ -1450,9 +1438,7 @@ if not master_df.empty:
     total_inspections = insp_count
     stops_json_str = json.dumps(stops_payload)
 
-    # ----------------------------------------------------
-    # 4. EMBEDDED OFFLINE DRIVER DECK
-    # ----------------------------------------------------
+    # OFFLINE-FIRST DRIVER DECK
     deck_html = f"""
     <!DOCTYPE html>
     <html>
@@ -1502,7 +1488,7 @@ if not master_df.empty:
             .badge-depot {{ background: #4b5563; color: #f3f4f6; }}
 
             .card-title {{ font-size: 1.35rem; font-weight: 800; color: #ffffff; margin: 0 0 6px 0; line-height: 1.25; }}
-            .card-city {{ font-size: 1.0rem; color: #9ca3af; margin-bottom: 12px; font-weight: 600; }}
+            .card-city {{ font-size: 1.05rem; color: #93c5fd; margin-bottom: 12px; font-weight: 700; }}
             .card-info-box {{
                 background: #111827;
                 border-radius: 8px;
@@ -1591,7 +1577,6 @@ if not master_df.empty:
             
             <div class="card-info-box">
                 <div class="info-line"><span class="info-bold">Work Order:</span> <span id="disp-order">--</span></div>
-                <div class="info-line" id="disp-notes-row" style="display:none;"><span class="info-bold">Notes:</span> <span id="disp-notes"></span></div>
             </div>
         </div>
 
@@ -1605,7 +1590,6 @@ if not master_df.empty:
             const totalInspections = {total_inspections};
             const totalRouteMiles = {total_miles_val};
 
-            // Retrieve position from phone flash memory
             let curIdx = parseInt(localStorage.getItem("cfs_route_idx") || "0", 10);
             if (curIdx >= totalRows) curIdx = totalRows - 1;
             if (curIdx < 0) curIdx = 0;
@@ -1648,19 +1632,11 @@ if not master_df.empty:
                 document.getElementById("disp-addr").innerText = s.address;
                 document.getElementById("disp-city").innerText = s.city_state ? ("📍 " + s.city_state) : "";
                 document.getElementById("disp-order").innerText = s.order_num || (s.is_depot ? "Base Depot" : "N/A");
-                
-                if (s.notes) {{
-                    document.getElementById("disp-notes").innerText = s.notes;
-                    document.getElementById("disp-notes-row").style.display = "block";
-                }} else {{
-                    document.getElementById("disp-notes-row").style.display = "none";
-                }}
 
-                // Force Full Street + City + State + Zip into Navigation Intent
+                // Clean destination strictly from B, D, and E (Address1 + City + State)
                 const mapsUrl = "https://www.google.com/maps/dir/?api=1&destination=" + encodeURIComponent(s.full_dest) + "&travelmode=driving";
                 document.getElementById("nav-link").href = mapsUrl;
 
-                // Adjust button label for final base return
                 const btnNext = document.getElementById("btn-next-action");
                 if (curIdx === totalRows - 2 && stops[totalRows - 1].is_depot) {{
                     btnNext.innerText = "Finish & Return to Base 🏁";
@@ -1670,12 +1646,10 @@ if not master_df.empty:
                     btnNext.innerText = "Next Stop ⏩";
                 }}
 
-                // True remaining route mileage calculation
                 const pctRemaining = totalRows > 1 ? ((totalRows - 1 - curIdx) / (totalRows - 1)) : 0;
                 const routeMilesLeft = totalRouteMiles * pctRemaining;
                 document.getElementById("hud-miles").innerText = Math.round(routeMilesLeft) + " mi";
 
-                // Pacing: 25 mph urban driving pace + 5 min onsite per remaining inspection
                 const driveMins = (routeMilesLeft / 25.0) * 60.0;
                 const onsiteMins = inspsLeft * 5.0;
                 const totalMinsNeeded = driveMins + onsiteMins;
