@@ -1363,20 +1363,26 @@ if not master_df.empty:
         st.dataframe(target_df.drop(columns=["Description"], errors="ignore"), use_container_width=True)
 
     # ----------------------------------------------------
-    # BIND TO THE DESKTOP TABLE'S METRICS
+    # BIND TO THE DESKTOP TABLE'S METRICS & GEOMETRY
     # ----------------------------------------------------
     total_rows = len(target_df)
     
     time_col = None
     dist_col = None
+    lat_col = None
+    lon_col = None
+
     for c in target_df.columns:
         cl = str(c).lower()
         if not time_col and any(t in cl for t in ["time", "eta", "arrival", "sched"]):
             time_col = c
         if not dist_col and any(m in cl for m in ["mile", "dist", "cum"]):
             dist_col = c
+        if not lat_col and "lat" in cl:
+            lat_col = c
+        if not lon_col and any(ln in cl for ln in ["lon", "lng"]):
+            lon_col = c
 
-    # Extract planned total route miles
     planned_total_miles = 0.0
     if dist_col:
         try:
@@ -1448,6 +1454,15 @@ if not master_df.empty:
         leg_dist = max(0.0, stop_cum_miles - prev_cum)
         prev_cum = stop_cum_miles
 
+        lat_val = 0.0
+        lon_val = 0.0
+        if lat_col and lon_col:
+            try:
+                lat_val = float(row.get(lat_col, 0.0))
+                lon_val = float(row.get(lon_col, 0.0))
+            except:
+                pass
+
         is_depot = False
         check_text = f"{addr_val} {order_val} {raw_name}".lower()
         if idx == 0 or idx == total_rows - 1:
@@ -1463,6 +1478,8 @@ if not master_df.empty:
             "planned_time": stop_planned_time,
             "cum_miles": stop_cum_miles,
             "leg_miles": round(leg_dist, 2),
+            "lat": lat_val,
+            "lon": lon_val,
             "is_depot": is_depot,
             "is_finish_leg": (idx == total_rows - 1 and is_depot),
             "status": "pending"
@@ -1470,6 +1487,9 @@ if not master_df.empty:
 
     stops_json_str = json.dumps(stops_payload)
 
+    # ----------------------------------------------------
+    # MOBILE DRIVER DECK WITH ADD, UPDATE, REOPTIMIZE
+    # ----------------------------------------------------
     deck_html = f"""
     <!DOCTYPE html>
     <html>
@@ -1486,13 +1506,13 @@ if not master_df.empty:
                 color: #fff;
                 text-align: center;
                 border-radius: 10px;
-                padding: 14px;
+                padding: 12px;
                 position: fixed;
                 z-index: 9999;
                 left: 50%;
                 top: 20px;
                 transform: translateX(-50%);
-                font-size: 1rem;
+                font-size: 0.95rem;
                 font-weight: 800;
                 box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
             }}
@@ -1607,25 +1627,56 @@ if not master_df.empty:
             .btn-warn {{ background: #7c2d12; color: #fecaca; }}
             .btn-danger {{ background: #881337; color: #fecdd3; }}
 
-            .btn-save-bar {{
-                display: block;
-                width: 100%;
+            .control-deck {{
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 8px;
+                margin-bottom: 8px;
+            }}
+            .btn-tool {{
                 background: #1e293b;
-                color: #94a3b8;
-                border: 1px dashed #475569;
-                padding: 10px;
+                color: #cbd5e1;
+                border: 1px solid #475569;
+                padding: 11px;
                 border-radius: 10px;
-                font-size: 0.9rem;
+                font-size: 0.85rem;
                 font-weight: 700;
                 cursor: pointer;
                 text-align: center;
-                margin-top: 6px;
+            }}
+            .btn-tool:active {{ background: #334155; }}
+
+            /* Add Stop Modal */
+            #add-modal {{
+                display: none;
+                position: fixed;
+                z-index: 10000;
+                left: 0; top: 0; width: 100%; height: 100%;
+                background: rgba(0, 0, 0, 0.75);
+                padding: 20px;
+            }}
+            .modal-content {{
+                background: #1f2937;
+                border-radius: 14px;
+                padding: 18px;
+                margin-top: 40px;
+                border: 1px solid #4b5563;
+            }}
+            .modal-input {{
+                width: 100%;
+                padding: 12px;
+                margin-bottom: 12px;
+                border-radius: 8px;
+                border: 1px solid #4b5563;
+                background: #111827;
+                color: #fff;
+                font-size: 1rem;
             }}
         </style>
     </head>
     <body>
 
-        <div id="toast">💾 Route Progress Saved!</div>
+        <div id="toast">💾 Updated!</div>
 
         <div class="hud-bar">
             <div>
@@ -1641,7 +1692,7 @@ if not master_df.empty:
                 <div class="hud-val c-red" id="hud-left">--</div>
             </div>
             <div>
-                <div class="hud-label">Miles</div>
+                <div class="hud-label">Miles Left</div>
                 <div class="hud-val c-yellow" id="hud-miles">--</div>
             </div>
             <div class="hud-sep">
@@ -1665,11 +1716,33 @@ if not master_df.empty:
 
         <div class="btn-row">
             <button class="btn-secondary" onclick="prevStop()">⬅️ Previous</button>
-            <button class="btn-secondary btn-warn" onclick="skipStop()">⏭️ Skip Stop</button>
+            <button class="btn-secondary btn-warn" onclick="skipStop()">⏭️ Skip</button>
             <button class="btn-secondary btn-danger" onclick="deleteStop()">🗑️ Delete</button>
         </div>
 
-        <button class="btn-save-bar" onclick="manualSave()">💾 Save Route Progress</button>
+        <div class="control-deck">
+            <button class="btn-tool" onclick="openAddModal()">➕ Add Stop</button>
+            <button class="btn-tool" onclick="reoptimizeRemaining()">🔀 Re-Optimize Route</button>
+        </div>
+
+        <div class="control-deck">
+            <button class="btn-tool" onclick="manualSync()">⚡ Update Time & Miles</button>
+            <button class="btn-tool" onclick="manualSave()">💾 Save Progress</button>
+        </div>
+
+        <!-- Add Stop Modal -->
+        <div id="add-modal">
+            <div class="modal-content">
+                <h3 style="margin-top:0; color:#fff;">Add Inspection Stop</h3>
+                <input type="text" id="modal-addr" class="modal-input" placeholder="Address (Street, City, Zip)">
+                <input type="text" id="modal-order" class="modal-input" placeholder="Work Order #">
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px;">
+                    <button class="btn-next" style="padding:12px; font-size:1rem;" onclick="confirmAddStop(true)">Insert Next</button>
+                    <button class="btn-secondary" style="padding:12px;" onclick="confirmAddStop(false)">Add to End</button>
+                </div>
+                <button class="btn-secondary btn-danger" style="width:100%; margin-top:8px; padding:10px;" onclick="closeAddModal()">Cancel</button>
+            </div>
+        </div>
 
         <script>
             let stops = {stops_json_str};
@@ -1685,14 +1758,9 @@ if not master_df.empty:
 
             function showToast(msg) {{
                 const toast = document.getElementById("toast");
-                toast.innerText = msg || "💾 Route Progress Saved!";
+                toast.innerText = msg;
                 toast.className = "show";
                 setTimeout(() => {{ toast.className = toast.className.replace("show", ""); }}, 2500);
-            }}
-
-            function manualSave() {{
-                saveStops();
-                showToast("✅ Route Saved to Device!");
             }}
 
             function formatTime(dt) {{
@@ -1708,6 +1776,16 @@ if not master_df.empty:
             function saveStops() {{
                 localStorage.setItem("cfs_route_stops_state", JSON.stringify(stops));
                 localStorage.setItem("cfs_route_idx", curIdx.toString());
+            }}
+
+            function manualSave() {{
+                saveStops();
+                showToast("💾 Progress Saved to Phone!");
+            }}
+
+            function manualSync() {{
+                updateDeck();
+                showToast("⚡ Time & Miles Recalibrated!");
             }}
 
             function updateDeck() {{
@@ -1738,7 +1816,7 @@ if not master_df.empty:
                 document.getElementById("disp-city").innerText = s.city_state ? ("📍 " + s.city_state) : "";
                 document.getElementById("disp-order").innerText = s.order_num || (s.is_depot ? "Base Depot" : "N/A");
 
-                const mapsUrl = "https://www.google.com/maps/dir/?api=1&destination=" + encodeURIComponent(s.full_dest) + "&travelmode=driving";
+                const mapsUrl = "https://www.google.com/maps/dir/?api=1&destination=" + encodeURIComponent(s.full_dest || s.address) + "&travelmode=driving";
                 document.getElementById("nav-link").href = mapsUrl;
 
                 const btnNext = document.getElementById("btn-next-action");
@@ -1750,18 +1828,17 @@ if not master_df.empty:
                     btnNext.innerText = "Next Stop (Complete) ⏩";
                 }}
 
-                // REMAINING MILES COUNTDOWN: Full route minus completed legs
+                // Calculate Remaining Miles
                 let remainingMiles = 0.0;
                 for (let i = curIdx; i < stops.length; i++) {{
                     if (stops[i].status !== "deleted") {{
-                        remainingMiles += parseFloat(stops[i].leg_miles || 0.0);
+                        remainingMiles += parseFloat(stops[i].leg_miles || 2.0);
                     }}
                 }}
-                if (curIdx === 0) remainingMiles = baselineTotalMiles;
+                if (curIdx === 0 && baselineTotalMiles > 0) remainingMiles = baselineTotalMiles;
                 document.getElementById("hud-miles").innerText = Math.round(remainingMiles) + " mi";
 
-                // PURE DURATION-BASED RETURN CLOCK (Departure Time + Remaining Drive & Stops)
-                // Highway/Rural speed ~ 42 mph average across long Virginia runs; 4 min/stop
+                // Return to Office ETA calculation
                 const driveHoursNeeded = remainingMiles / 42.0; 
                 const stopHoursNeeded = (inspsLeft * 4.0) / 60.0;
                 const totalHoursNeeded = driveHoursNeeded + stopHoursNeeded;
@@ -1807,6 +1884,86 @@ if not master_df.empty:
                 }}
             }}
 
+            // ADD STOP DIALOG
+            function openAddModal() {{
+                document.getElementById("modal-addr").value = "";
+                document.getElementById("modal-order").value = "";
+                document.getElementById("add-modal").style.display = "block";
+            }}
+
+            function closeAddModal() {{
+                document.getElementById("add-modal").style.display = "none";
+            }}
+
+            function confirmAddStop(insertImmediate) {{
+                const addr = document.getElementById("modal-addr").value.trim();
+                const order = document.getElementById("modal-order").value.trim();
+                if (!addr) {{
+                    alert("Please enter an address");
+                    return;
+                }}
+
+                const newStop = {{
+                    row_idx: stops.length,
+                    address: addr,
+                    city_state: "",
+                    full_dest: addr,
+                    order_num: order || "NEW-STOP",
+                    planned_time: "--:--",
+                    cum_miles: 0,
+                    leg_miles: 2.5,
+                    is_depot: false,
+                    is_finish_leg: false,
+                    status: "pending"
+                }};
+
+                if (insertImmediate) {{
+                    stops.splice(curIdx + 1, 0, newStop);
+                }} else {{
+                    const lastIdx = stops.length - 1;
+                    if (stops[lastIdx] && stops[lastIdx].is_depot) {{
+                        stops.splice(lastIdx, 0, newStop);
+                    }} else {{
+                        stops.push(newStop);
+                    }}
+                }}
+
+                closeAddModal();
+                updateDeck();
+                showToast("➕ Stop Added Successfully!");
+            }}
+
+            // RE-OPTIMIZE REMAINING QUEUE FROM CURRENT STOP
+            function reoptimizeRemaining() {{
+                if (curIdx >= stops.length - 2) {{
+                    showToast("Only 1 stop remaining; route optimal.");
+                    return;
+                }}
+
+                let hasDepot = stops[stops.length - 1].is_depot;
+                let depotStop = hasDepot ? stops.pop() : null;
+
+                let remaining = stops.splice(curIdx + 1);
+
+                // Sort by distance/proximity if coordinates exist, otherwise preserve insertion
+                remaining.sort((a, b) => {{
+                    if (a.lat && b.lat) {{
+                        const curLat = stops[curIdx].lat || 38.85;
+                        const curLon = stops[curIdx].lon || -77.05;
+                        const distA = Math.hypot(a.lat - curLat, a.lon - curLon);
+                        const distB = Math.hypot(b.lat - curLat, b.lon - curLon);
+                        return distA - distB;
+                    }}
+                    return 0;
+                }});
+
+                stops = stops.concat(remaining);
+                if (depotStop) stops.push(depotStop);
+
+                updateDeck();
+                showToast("🔀 Remaining Queue Re-Optimized!");
+            }}
+
             updateDeck();
             setInterval(updateDeck, 15000);
         </script>
@@ -1814,5 +1971,4 @@ if not master_df.empty:
     </html>
     """
 
-    components.html(deck_html, height=590, scrolling=False)
-   
+    components.html(deck_html, height=620, scrolling=False)
