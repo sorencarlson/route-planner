@@ -1300,7 +1300,7 @@ if not master_df.empty:
         gpx_lines.append('  </rte>')
         gpx_lines.append('</gpx>')
         gpx_string = "\n".join(gpx_lines)
-     # Clean export filenames with timestamp
+    # Clean export filenames with timestamp
     import json
     import datetime
     import streamlit.components.v1 as components
@@ -1362,32 +1362,40 @@ if not master_df.empty:
         st.button("Print Manifest", on_click=None, help="Use browser Print (Ctrl+P)")
         st.dataframe(target_df.drop(columns=["Description"], errors="ignore"), use_container_width=True)
 
-    # DIRECT DISTANCE EXTRACTION
-    total_miles_val = 0.0
-    dist_cols = [c for c in target_df.columns if any(m in c.lower() for m in ["mile", "dist", "cum"])]
-    if dist_cols:
+    # ----------------------------------------------------
+    # BIND TO THE DESKTOP TABLE'S OWN TIME & DISTANCE
+    # ----------------------------------------------------
+    total_rows = len(target_df)
+    
+    time_col = None
+    dist_col = None
+    for c in target_df.columns:
+        cl = str(c).lower()
+        if not time_col and any(t in cl for t in ["time", "eta", "arrival", "sched"]):
+            time_col = c
+        if not dist_col and any(m in cl for m in ["mile", "dist", "cum"]):
+            dist_col = c
+
+    planned_finish_str = "08:00 PM"
+    if time_col:
         try:
-            val = target_df[dist_cols[0]].dropna().iloc[-1]
-            total_miles_val = float(val)
+            val = str(target_df[time_col].dropna().iloc[-1]).strip()
+            if val and val.lower() != "nan":
+                planned_finish_str = val
         except Exception:
             pass
 
-    if not total_miles_val or total_miles_val <= 0:
-        for k in ["total_miles", "route_miles", "total_distance"]:
-            if k in locals() and locals().get(k):
-                try: total_miles_val = float(locals().get(k)); break
-                except: pass
-            elif k in st.session_state and st.session_state.get(k):
-                try: total_miles_val = float(st.session_state.get(k)); break
-                except: pass
+    planned_total_miles = 50.0
+    if dist_col:
+        try:
+            val = float(target_df[dist_col].dropna().iloc[-1])
+            if val > 0:
+                planned_total_miles = round(val, 1)
+        except Exception:
+            pass
 
-    if not total_miles_val or total_miles_val > 350:
-        total_miles_val = round(len(target_df) * 2.1 + 8.0, 1)
-
-    # PAYLOAD BUILDER WITH DIRECT COLUMN EXTRACTION
     stops_payload = []
-    depot_keywords = ["start", "end", "depot", "origin", "destination", "home", "base", "arlington"]
-    total_rows = len(target_df)
+    depot_keywords = ["start", "end", "depot", "origin", "destination", "home", "base", "arlington", "shirlington"]
 
     for idx, row in target_df.iterrows():
         raw_name = str(row.get("Name") or row.get("Description") or "").strip()
@@ -1398,7 +1406,6 @@ if not master_df.empty:
             if v and v.lower() != "nan":
                 addr_val = v
                 break
-        
         if not addr_val and "/" in raw_name:
             addr_val = raw_name.split("/")[0].strip()
         elif not addr_val:
@@ -1434,6 +1441,14 @@ if not master_df.empty:
         nav_parts = [p for p in [addr_val, city_clean, state_clean, zip_clean] if p]
         nav_query_str = ", ".join(nav_parts)
 
+        stop_planned_time = str(row.get(time_col, "")).strip() if time_col else ""
+        stop_cum_miles = 0.0
+        if dist_col:
+            try:
+                stop_cum_miles = float(row.get(dist_col, 0.0))
+            except:
+                stop_cum_miles = 0.0
+
         is_depot = False
         check_text = f"{addr_val} {order_val} {raw_name}".lower()
         if idx == 0 or idx == total_rows - 1:
@@ -1446,19 +1461,13 @@ if not master_df.empty:
             "city_state": city_state_str,
             "full_dest": nav_query_str,
             "order_num": order_val,
+            "planned_time": stop_planned_time,
+            "cum_miles": stop_cum_miles,
             "is_depot": is_depot,
-            "is_finish_leg": (idx == total_rows - 1 and is_depot)
+            "is_finish_leg": (idx == total_rows - 1 and is_depot),
+            "status": "pending"
         })
 
-    insp_count = 0
-    for s in stops_payload:
-        if not s["is_depot"]:
-            insp_count += 1
-            s["insp_num"] = insp_count
-        else:
-            s["insp_num"] = 0
-
-    total_inspections = insp_count
     stops_json_str = json.dumps(stops_payload)
 
     deck_html = f"""
@@ -1480,8 +1489,8 @@ if not master_df.empty:
                 margin-bottom: 12px;
                 text-align: center;
             }}
-            .hud-label {{ font-size: 0.65rem; color: #9ca3af; text-transform: uppercase; font-weight: 700; margin-bottom: 2px; }}
-            .hud-val {{ font-size: 1.05rem; font-weight: 800; }}
+            .hud-label {{ font-size: 0.62rem; color: #9ca3af; text-transform: uppercase; font-weight: 700; margin-bottom: 2px; }}
+            .hud-val {{ font-size: 1.02rem; font-weight: 800; }}
             .c-blue {{ color: #60a5fa; }}
             .c-green {{ color: #34d399; }}
             .c-red {{ color: #f87171; }}
@@ -1532,7 +1541,7 @@ if not master_df.empty:
                 border-radius: 12px;
                 font-size: 1.15rem;
                 font-weight: 800;
-                margin-bottom: 12px;
+                margin-bottom: 10px;
                 border: none;
                 cursor: pointer;
             }}
@@ -1553,18 +1562,26 @@ if not master_df.empty:
                 text-transform: uppercase;
             }}
             .btn-next:active {{ transform: scale(0.98); background: #047857; }}
-            .btn-prev {{
-                display: block;
-                width: 100%;
+            
+            .btn-row {{
+                display: grid;
+                grid-template-columns: 1fr 1fr 1fr;
+                gap: 8px;
+                margin-bottom: 10px;
+            }}
+            .btn-secondary {{
                 background: #374151;
                 color: #d1d5db;
-                padding: 10px;
+                padding: 12px 6px;
                 border-radius: 10px;
-                font-size: 0.95rem;
-                font-weight: 600;
+                font-size: 0.85rem;
+                font-weight: 700;
                 border: none;
                 cursor: pointer;
+                text-align: center;
             }}
+            .btn-warn {{ background: #7c2d12; color: #fecaca; }}
+            .btn-danger {{ background: #881337; color: #fecdd3; }}
         </style>
     </head>
     <body>
@@ -1587,7 +1604,7 @@ if not master_df.empty:
                 <div class="hud-val c-yellow" id="hud-miles">--</div>
             </div>
             <div class="hud-sep">
-                <div class="hud-label">Return</div>
+                <div class="hud-label">Office ETA</div>
                 <div class="hud-val c-cyan" id="hud-finish">--:--</div>
             </div>
         </div>
@@ -1599,22 +1616,47 @@ if not master_df.empty:
             
             <div class="card-info-box">
                 <div class="info-line"><span class="info-bold">Work Order:</span> <span id="disp-order">--</span></div>
+                <div class="info-line"><span class="info-bold">Sched. Arrival:</span> <span id="disp-sched">--:--</span></div>
             </div>
         </div>
 
         <a id="nav-link" href="#" target="_blank" class="btn-nav">📍 Open in Google Maps</a>
-        <button id="btn-next-action" class="btn-next" onclick="nextStop()">Next Stop ⏩</button>
-        <button class="btn-prev" onclick="prevStop()">⬅️ Previous Stop</button>
+        <button id="btn-next-action" class="btn-next" onclick="completeStop()">Next Stop (Complete) ⏩</button>
+
+        <div class="btn-row">
+            <button class="btn-secondary" onclick="prevStop()">⬅️ Previous</button>
+            <button class="btn-secondary btn-warn" onclick="skipStop()">⏭️ Skip Stop</button>
+            <button class="btn-secondary btn-danger" onclick="deleteStop()">🗑️ Delete</button>
+        </div>
 
         <script>
-            const stops = {stops_json_str};
-            const totalRows = stops.length;
-            const totalInspections = {total_inspections};
-            const totalRouteMiles = {total_miles_val};
+            let stops = {stops_json_str};
+            const baselineFinishStr = "{planned_finish_str}";
+            const baselineTotalMiles = {planned_total_miles};
+
+            const savedState = localStorage.getItem("cfs_route_stops_state");
+            if (savedState) {{
+                try {{ stops = JSON.parse(savedState); }} catch(e) {{}}
+            }}
 
             let curIdx = parseInt(localStorage.getItem("cfs_route_idx") || "0", 10);
-            if (curIdx >= totalRows) curIdx = totalRows - 1;
-            if (curIdx < 0) curIdx = 0;
+            if (curIdx >= stops.length) curIdx = Math.max(0, stops.length - 1);
+
+            function parseTimeString(tStr) {{
+                if (!tStr) return null;
+                const now = new Date();
+                const clean = tStr.trim().toUpperCase();
+                let isPM = clean.includes("PM");
+                let isAM = clean.includes("AM");
+                let timeParts = clean.replace("AM", "").replace("PM", "").trim().split(":");
+                if (timeParts.length < 2) return null;
+                let h = parseInt(timeParts[0], 10);
+                let m = parseInt(timeParts[1], 10);
+                if (isPM && h < 12) h += 12;
+                if (isAM && h === 12) h = 0;
+                let d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0);
+                return d;
+            }}
 
             function formatTime(dt) {{
                 let hrs = dt.getHours();
@@ -1626,26 +1668,30 @@ if not master_df.empty:
                 return hrs + ':' + mins + ' ' + ampm;
             }}
 
+            function saveStops() {{
+                localStorage.setItem("cfs_route_stops_state", JSON.stringify(stops));
+                localStorage.setItem("cfs_route_idx", curIdx.toString());
+            }}
+
             function updateDeck() {{
+                if (stops.length === 0) return;
+                if (curIdx >= stops.length) curIdx = stops.length - 1;
+
                 const s = stops[curIdx];
 
-                let inspsDone = 0;
-                let inspsLeft = 0;
-                for (let i = 0; i < totalRows; i++) {{
-                    if (!stops[i].is_depot) {{
-                        if (i < curIdx) inspsDone++;
-                        else inspsLeft++;
-                    }}
-                }}
+                let activeInsps = stops.filter(st => !st.is_depot && st.status !== "deleted");
+                let inspsDone = stops.slice(0, curIdx).filter(st => !st.is_depot && (st.status === "completed" || st.status === "skipped")).length;
+                let inspsLeft = stops.slice(curIdx).filter(st => !st.is_depot && st.status === "pending").length;
 
                 if (s.is_depot) {{
                     document.getElementById("hud-stop").innerText = s.is_finish_leg ? "END" : "START";
                     document.getElementById("disp-badge").className = "card-badge badge-depot";
                     document.getElementById("disp-badge").innerText = s.is_finish_leg ? "🏁 RETURN TO BASE" : "DEPARTURE BASE";
                 }} else {{
-                    document.getElementById("hud-stop").innerText = s.insp_num + "/" + totalInspections;
+                    let currentActiveNumber = stops.slice(0, curIdx + 1).filter(st => !st.is_depot && st.status !== "deleted").length;
+                    document.getElementById("hud-stop").innerText = currentActiveNumber + "/" + activeInsps.length;
                     document.getElementById("disp-badge").className = "card-badge badge-inspection";
-                    document.getElementById("disp-badge").innerText = "INSPECTION #" + s.insp_num + " OF " + totalInspections;
+                    document.getElementById("disp-badge").innerText = "INSPECTION #" + currentActiveNumber + " OF " + activeInsps.length;
                 }}
 
                 document.getElementById("hud-done").innerText = inspsDone;
@@ -1654,36 +1700,70 @@ if not master_df.empty:
                 document.getElementById("disp-addr").innerText = s.address || "Property Address";
                 document.getElementById("disp-city").innerText = s.city_state ? ("📍 " + s.city_state) : "";
                 document.getElementById("disp-order").innerText = s.order_num || (s.is_depot ? "Base Depot" : "N/A");
+                document.getElementById("disp-sched").innerText = s.planned_time || "--:--";
 
                 const mapsUrl = "https://www.google.com/maps/dir/?api=1&destination=" + encodeURIComponent(s.full_dest) + "&travelmode=driving";
                 document.getElementById("nav-link").href = mapsUrl;
 
                 const btnNext = document.getElementById("btn-next-action");
-                if (curIdx === totalRows - 2 && stops[totalRows - 1].is_depot) {{
+                if (curIdx === stops.length - 2 && stops[stops.length - 1].is_depot) {{
                     btnNext.innerText = "Finish & Return to Base 🏁";
-                }} else if (curIdx >= totalRows - 1) {{
+                }} else if (curIdx >= stops.length - 1) {{
                     btnNext.innerText = "Route Complete ✅";
                 }} else {{
-                    btnNext.innerText = "Next Stop ⏩";
+                    btnNext.innerText = "Next Stop (Complete) ⏩";
                 }}
 
-                const pctRemaining = totalRows > 1 ? ((totalRows - 1 - curIdx) / (totalRows - 1)) : 0;
-                const routeMilesLeft = totalRouteMiles * pctRemaining;
+                // EXACT ODOMETER COUNTDOWN (Target Table Baseline)
+                const currentStopMiles = parseFloat(s.cum_miles || 0.0);
+                const routeMilesLeft = Math.max(0.0, baselineTotalMiles - currentStopMiles);
                 document.getElementById("hud-miles").innerText = Math.round(routeMilesLeft) + " mi";
 
-                const driveMins = (routeMilesLeft / 25.0) * 60.0;
-                const totalMinsNeeded = driveMins;
+                // ACCURATE BENCHMARK PACING (Direct from desktop plan)
+                const baseFinishDate = parseTimeString(baselineFinishStr);
+                if (baseFinishDate) {{
+                    let finishDate = new Date(baseFinishDate.getTime());
+                    
+                    const stopSchedDate = parseTimeString(s.planned_time);
+                    if (stopSchedDate && curIdx > 0 && curIdx < stops.length - 1) {{
+                        const now = new Date();
+                        // If you are ahead of this stop's planned arrival time, finishDate moves earlier
+                        const diffMs = stopSchedDate.getTime() - now.getTime();
+                        finishDate = new Date(finishDate.getTime() - diffMs);
+                    }}
 
-                const now = new Date();
-                const finishDate = new Date(now.getTime() + totalMinsNeeded * 60000);
-                document.getElementById("hud-finish").innerText = formatTime(finishDate);
+                    let skippedCount = stops.filter(st => st.status === "skipped" || st.status === "deleted").length;
+                    finishDate = new Date(finishDate.getTime() - (skippedCount * 5 * 60000));
 
-                localStorage.setItem("cfs_route_idx", curIdx.toString());
+                    document.getElementById("hud-finish").innerText = formatTime(finishDate);
+                }} else {{
+                    document.getElementById("hud-finish").innerText = baselineFinishStr;
+                }}
+
+                saveStops();
             }}
 
-            function nextStop() {{
-                if (curIdx < totalRows - 1) {{
+            function completeStop() {{
+                if (curIdx < stops.length - 1) {{
+                    stops[curIdx].status = "completed";
                     curIdx++;
+                    updateDeck();
+                }}
+            }}
+
+            function skipStop() {{
+                if (curIdx < stops.length - 1) {{
+                    stops[curIdx].status = "skipped";
+                    curIdx++;
+                    updateDeck();
+                }}
+            }}
+
+            function deleteStop() {{
+                if (confirm("Delete this stop from the active route?")) {{
+                    stops[curIdx].status = "deleted";
+                    stops.splice(curIdx, 1);
+                    if (curIdx >= stops.length) curIdx = Math.max(0, stops.length - 1);
                     updateDeck();
                 }}
             }}
@@ -1702,4 +1782,4 @@ if not master_df.empty:
     </html>
     """
 
-    components.html(deck_html, height=540, scrolling=False)
+    components.html(deck_html, height=560, scrolling=False)
