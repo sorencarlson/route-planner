@@ -1300,7 +1300,7 @@ if not master_df.empty:
         gpx_lines.append('  </rte>')
         gpx_lines.append('</gpx>')
         gpx_string = "\n".join(gpx_lines)
-  # Clean export filenames with timestamp
+# Clean export filenames with timestamp
     import json
     import datetime
     import streamlit.components.v1 as components
@@ -1531,15 +1531,15 @@ if not master_df.empty:
                 background: #111827;
                 border: 1px solid #374151;
                 border-radius: 12px;
-                padding: 10px 4px;
+                padding: 10px 2px;
                 margin-bottom: 12px;
                 text-align: center;
             }}
-            .hud-label {{ font-size: 0.62rem; color: #9ca3af; text-transform: uppercase; font-weight: 700; margin-bottom: 2px; }}
-            .hud-val {{ font-size: 1.02rem; font-weight: 800; }}
+            .hud-label {{ font-size: 0.58rem; color: #9ca3af; text-transform: uppercase; font-weight: 800; margin-bottom: 2px; }}
+            .hud-val {{ font-size: 0.98rem; font-weight: 800; }}
             .c-blue {{ color: #60a5fa; }}
+            .c-orange {{ color: #fb923c; }}
             .c-green {{ color: #34d399; }}
-            .c-red {{ color: #f87171; }}
             .c-yellow {{ color: #fbbf24; }}
             .c-cyan {{ color: #38bdf8; }}
             .hud-sep {{ border-left: 1px solid #374151; }}
@@ -1686,16 +1686,16 @@ if not master_df.empty:
                 <div class="hud-val c-blue" id="hud-stop">1/--</div>
             </div>
             <div>
-                <div class="hud-label">Done</div>
-                <div class="hud-val c-green" id="hud-done">0</div>
-            </div>
-            <div>
                 <div class="hud-label">Left</div>
-                <div class="hud-val c-red" id="hud-left">--</div>
+                <div class="hud-val c-orange" id="hud-left">--</div>
             </div>
             <div>
-                <div class="hud-label">Miles Left</div>
-                <div class="hud-val c-yellow" id="hud-miles">--</div>
+                <div class="hud-label">Driven</div>
+                <div class="hud-val c-green" id="hud-driven">0 mi</div>
+            </div>
+            <div>
+                <div class="hud-label">To Office</div>
+                <div class="hud-val c-yellow" id="hud-to-office">-- mi</div>
             </div>
             <div class="hud-sep">
                 <div class="hud-label">Office ETA</div>
@@ -1775,7 +1775,6 @@ if not master_df.empty:
                 return hrs + ':' + mins + ' ' + ampm;
             }}
 
-            // AUTOMATIC SAVE: Every action triggers persistent storage
             function autoSave() {{
                 try {{
                     localStorage.setItem("cfs_route_stops_state", JSON.stringify(stops));
@@ -1797,7 +1796,6 @@ if not master_df.empty:
                 const s = stops[curIdx];
 
                 let activeInsps = stops.filter(st => !st.is_depot && st.status !== "deleted");
-                let inspsDone = stops.slice(0, curIdx).filter(st => !st.is_depot && (st.status === "completed" || st.status === "skipped")).length;
                 let inspsLeft = stops.slice(curIdx).filter(st => !st.is_depot && st.status === "pending").length;
 
                 if (s.is_depot) {{
@@ -1811,8 +1809,35 @@ if not master_df.empty:
                     document.getElementById("disp-badge").innerText = "INSPECTION #" + currentActiveNumber + " OF " + activeInsps.length;
                 }}
 
-                document.getElementById("hud-done").innerText = inspsDone;
                 document.getElementById("hud-left").innerText = inspsLeft;
+
+                // 1. DRIVEN MILES: exact sum of legs traversed up to this stop
+                let drivenMiles = 0.0;
+                for (let i = 0; i < curIdx; i++) {{
+                    if (stops[i].status !== "deleted") {{
+                        drivenMiles += parseFloat(stops[i].leg_miles || 0.0);
+                    }}
+                }}
+                document.getElementById("hud-driven").innerText = Math.round(drivenMiles) + " mi";
+
+                // 2. TO OFFICE: sum of remaining legs directly back to home/depot
+                let toOfficeMiles = 0.0;
+                for (let i = curIdx; i < stops.length; i++) {{
+                    if (stops[i].status !== "deleted") {{
+                        toOfficeMiles += parseFloat(stops[i].leg_miles || 0.0);
+                    }}
+                }}
+                if (curIdx === 0 && baselineTotalMiles > 0) toOfficeMiles = baselineTotalMiles;
+                document.getElementById("hud-to-office").innerText = Math.round(toOfficeMiles) + " mi";
+
+                // 3. LIVE OFFICE ETA: Real driving time for remaining miles + remaining stop inspection buffers
+                const driveHoursNeeded = toOfficeMiles / 42.0; 
+                const stopHoursNeeded = (inspsLeft * 4.0) / 60.0;
+                const totalHoursNeeded = driveHoursNeeded + stopHoursNeeded;
+
+                const now = new Date();
+                const finishDate = new Date(now.getTime() + totalHoursNeeded * 3600000);
+                document.getElementById("hud-finish").innerText = formatTime(finishDate);
 
                 document.getElementById("disp-addr").innerText = s.address || "Property Address";
                 document.getElementById("disp-city").innerText = s.city_state ? ("📍 " + s.city_state) : "";
@@ -1829,25 +1854,6 @@ if not master_df.empty:
                 }} else {{
                     btnNext.innerText = "Next Stop (Complete) ⏩";
                 }}
-
-                // Calculate Remaining Miles
-                let remainingMiles = 0.0;
-                for (let i = curIdx; i < stops.length; i++) {{
-                    if (stops[i].status !== "deleted") {{
-                        remainingMiles += parseFloat(stops[i].leg_miles || 2.0);
-                    }}
-                }}
-                if (curIdx === 0 && baselineTotalMiles > 0) remainingMiles = baselineTotalMiles;
-                document.getElementById("hud-miles").innerText = Math.round(remainingMiles) + " mi";
-
-                // Return to Office ETA calculation
-                const driveHoursNeeded = remainingMiles / 42.0; 
-                const stopHoursNeeded = (inspsLeft * 4.0) / 60.0;
-                const totalHoursNeeded = driveHoursNeeded + stopHoursNeeded;
-
-                const now = new Date();
-                const finishDate = new Date(now.getTime() + totalHoursNeeded * 3600000);
-                document.getElementById("hud-finish").innerText = formatTime(finishDate);
 
                 autoSave();
             }}
@@ -1905,7 +1911,6 @@ if not master_df.empty:
                     return;
                 }}
 
-                // Inherit approximate lat/lon from current stop for clustering
                 const curStop = stops[curIdx] || {{}};
                 const newStop = {{
                     row_idx: stops.length,
@@ -1939,7 +1944,6 @@ if not master_df.empty:
                 showToast("➕ Stop Added & Saved!");
             }}
 
-            // ROBUST RE-OPTIMIZE: Handles arbitrary addresses, missing coords, and depots
             function reoptimizeRemaining() {{
                 if (curIdx >= stops.length - 2) {{
                     showToast("Route already optimal!");
@@ -1951,7 +1955,6 @@ if not master_df.empty:
 
                 let remaining = stops.splice(curIdx + 1);
 
-                // Nearest-Neighbor sequencing from current position
                 let currentLat = parseFloat(stops[curIdx].lat || 0.0);
                 let currentLon = parseFloat(stops[curIdx].lon || 0.0);
 
@@ -1968,7 +1971,6 @@ if not master_df.empty:
                         if (currentLat !== 0 && candLat !== 0) {{
                             d = Math.hypot(candLat - currentLat, candLon - currentLon);
                         }} else {{
-                            // Lexical proximity fallback for addresses without GPS
                             d = remaining[i].address.localeCompare(stops[curIdx].address);
                         }}
 
