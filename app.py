@@ -1393,7 +1393,17 @@ if not master_df.empty:
             pass
 
     if planned_total_miles <= 0:
-        planned_total_miles = 526.0
+        planned_total_miles = 342.2
+
+    # Baseline planned arrival from desktop table
+    planned_finish_str = "07:13 PM"
+    if time_col:
+        try:
+            val = str(target_df[time_col].dropna().iloc[-1]).strip()
+            if val and val.lower() != "nan":
+                planned_finish_str = val
+        except Exception:
+            pass
 
     stops_payload = []
     depot_keywords = ["start", "end", "depot", "origin", "destination", "home", "base", "arlington", "shirlington"]
@@ -1465,8 +1475,8 @@ if not master_df.empty:
             lat_val = 0.0
             lon_val = 0.0
 
-        is_depot = False
         check_text = f"{addr_val} {order_val} {raw_name}".lower()
+        is_depot = False
         if idx == 0 or idx == total_rows - 1:
             if any(k in check_text for k in depot_keywords):
                 is_depot = True
@@ -1488,10 +1498,8 @@ if not master_df.empty:
         })
 
     stops_json_str = json.dumps(stops_payload)
+    route_sig = f"sig_{len(stops_payload)}_{planned_total_miles}"
 
-    # ----------------------------------------------------
-    # MOBILE DRIVER DECK
-    # ----------------------------------------------------
     deck_html = f"""
     <!DOCTYPE html>
     <html>
@@ -1648,7 +1656,6 @@ if not master_df.empty:
             }}
             .btn-tool:active {{ background: #334155; }}
 
-            /* Add Stop Modal */
             #add-modal {{
                 display: none;
                 position: fixed;
@@ -1678,7 +1685,7 @@ if not master_df.empty:
     </head>
     <body>
 
-        <div id="toast">💾 Saved & Updated!</div>
+        <div id="toast">💾 Live Sync Updated!</div>
 
         <div class="hud-bar">
             <div>
@@ -1728,7 +1735,6 @@ if not master_df.empty:
             <button class="btn-tool" onclick="manualSync()">⚡ Update Live</button>
         </div>
 
-        <!-- Add Stop Modal -->
         <div id="add-modal">
             <div class="modal-content">
                 <h3 style="margin-top:0; color:#fff;">Add Inspection Stop</h3>
@@ -1746,6 +1752,17 @@ if not master_df.empty:
         <script>
             let stops = {stops_json_str};
             const baselineTotalMiles = {planned_total_miles};
+            const baselineFinishStr = "{planned_finish_str}";
+            const currentSig = "{route_sig}";
+
+            // Reset storage when new route is loaded
+            const savedSig = localStorage.getItem("cfs_route_signature");
+            if (savedSig !== currentSig) {{
+                localStorage.removeItem("cfs_route_stops_state");
+                localStorage.removeItem("cfs_route_idx");
+                localStorage.removeItem("cfs_route_underway");
+                localStorage.setItem("cfs_route_signature", currentSig);
+            }}
 
             const savedState = localStorage.getItem("cfs_route_stops_state");
             if (savedState) {{
@@ -1756,7 +1773,12 @@ if not master_df.empty:
             }}
 
             let curIdx = parseInt(localStorage.getItem("cfs_route_idx") || "0", 10);
-            if (isNaN(curIdx) || curIdx >= stops.length) curIdx = Math.max(0, stops.length - 1);
+            if (isNaN(curIdx) || curIdx >= stops.length) curIdx = 0;
+
+            // Start directly on first real inspection stop (skip driveway depot)
+            if (curIdx === 0 && stops[0].is_depot && stops.length > 1) {{
+                curIdx = 1;
+            }}
 
             function showToast(msg) {{
                 const toast = document.getElementById("toast");
@@ -1779,14 +1801,14 @@ if not master_df.empty:
                 try {{
                     localStorage.setItem("cfs_route_stops_state", JSON.stringify(stops));
                     localStorage.setItem("cfs_route_idx", curIdx.toString());
-                }} catch(e) {{
-                    console.error("Storage error:", e);
-                }}
+                }} catch(e) {{}}
             }}
 
             function manualSync() {{
+                // Force engaging Live Driving Mode on manual tap
+                localStorage.setItem("cfs_route_underway", "true");
                 updateDeck();
-                showToast("⚡ Time & Miles Recalibrated!");
+                showToast("⚡ Office ETA Recalibrated to Live Clock!");
             }}
 
             function updateDeck() {{
@@ -1811,7 +1833,7 @@ if not master_df.empty:
 
                 document.getElementById("hud-left").innerText = inspsLeft;
 
-                // 1. DRIVEN MILES: exact sum of legs traversed up to this stop
+                // 1. DRIVEN MILES
                 let drivenMiles = 0.0;
                 for (let i = 0; i < curIdx; i++) {{
                     if (stops[i].status !== "deleted") {{
@@ -1820,24 +1842,32 @@ if not master_df.empty:
                 }}
                 document.getElementById("hud-driven").innerText = Math.round(drivenMiles) + " mi";
 
-                // 2. TO OFFICE: sum of remaining legs directly back to home/depot
+                // 2. TO OFFICE MILES
                 let toOfficeMiles = 0.0;
                 for (let i = curIdx; i < stops.length; i++) {{
                     if (stops[i].status !== "deleted") {{
                         toOfficeMiles += parseFloat(stops[i].leg_miles || 0.0);
                     }}
                 }}
-                if (curIdx === 0 && baselineTotalMiles > 0) toOfficeMiles = baselineTotalMiles;
+                if (curIdx <= 1 && drivenMiles === 0 && baselineTotalMiles > 0) toOfficeMiles = baselineTotalMiles;
                 document.getElementById("hud-to-office").innerText = Math.round(toOfficeMiles) + " mi";
 
-                // 3. LIVE OFFICE ETA: Real driving time for remaining miles + remaining stop inspection buffers
-                const driveHoursNeeded = toOfficeMiles / 42.0; 
-                const stopHoursNeeded = (inspsLeft * 4.0) / 60.0;
-                const totalHoursNeeded = driveHoursNeeded + stopHoursNeeded;
+                // 3. OFFICE ETA (Standby vs Live Departure State)
+                const isUnderway = (curIdx > 1) || (drivenMiles > 0) || (localStorage.getItem("cfs_route_underway") === "true");
 
-                const now = new Date();
-                const finishDate = new Date(now.getTime() + totalHoursNeeded * 3600000);
-                document.getElementById("hud-finish").innerText = formatTime(finishDate);
+                if (!isUnderway) {{
+                    // Standby Mode: Lock to scheduled finish until tires actually roll
+                    document.getElementById("hud-finish").innerText = baselineFinishStr;
+                }} else {{
+                    // Active Live Mode: Clock NOW + remaining travel time + inspection buffers
+                    const remainingDriveMinutes = (toOfficeMiles / 42.0) * 60.0;
+                    const remainingInspectionMinutes = inspsLeft * 4.0;
+                    const totalMinutesRemaining = remainingDriveMinutes + remainingInspectionMinutes;
+
+                    const liveNow = new Date();
+                    const arrivalAtOffice = new Date(liveNow.getTime() + (totalMinutesRemaining * 60000));
+                    document.getElementById("hud-finish").innerText = formatTime(arrivalAtOffice);
+                }}
 
                 document.getElementById("disp-addr").innerText = s.address || "Property Address";
                 document.getElementById("disp-city").innerText = s.city_state ? ("📍 " + s.city_state) : "";
@@ -1860,6 +1890,8 @@ if not master_df.empty:
 
             function completeStop() {{
                 if (curIdx < stops.length - 1) {{
+                    // First completed stop officially activates live driving mode
+                    localStorage.setItem("cfs_route_underway", "true");
                     stops[curIdx].status = "completed";
                     curIdx++;
                     updateDeck();
@@ -1869,6 +1901,7 @@ if not master_df.empty:
 
             function skipStop() {{
                 if (curIdx < stops.length - 1) {{
+                    localStorage.setItem("cfs_route_underway", "true");
                     stops[curIdx].status = "skipped";
                     curIdx++;
                     updateDeck();
@@ -1889,6 +1922,9 @@ if not master_df.empty:
             function prevStop() {{
                 if (curIdx > 0) {{
                     curIdx--;
+                    if (curIdx === 0 && stops[0].is_depot && stops.length > 1) {{
+                        curIdx = 1;
+                    }}
                     updateDeck();
                 }}
             }}
