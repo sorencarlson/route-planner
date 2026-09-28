@@ -1300,7 +1300,7 @@ if not master_df.empty:
         gpx_lines.append('  </rte>')
         gpx_lines.append('</gpx>')
         gpx_string = "\n".join(gpx_lines)
-    # Clean export filenames with timestamp
+  # Clean export filenames with timestamp
     import json
     import datetime
     import streamlit.components.v1 as components
@@ -1378,9 +1378,9 @@ if not master_df.empty:
             time_col = c
         if not dist_col and any(m in cl for m in ["mile", "dist", "cum"]):
             dist_col = c
-        if not lat_col and "lat" in cl:
+        if not lat_col and any(lt in cl for lt in ["latitude", "lat", "y"]):
             lat_col = c
-        if not lon_col and any(ln in cl for ln in ["lon", "lng"]):
+        if not lon_col and any(ln in cl for ln in ["longitude", "long", "lon", "lng", "x"]):
             lon_col = c
 
     planned_total_miles = 0.0
@@ -1456,12 +1456,14 @@ if not master_df.empty:
 
         lat_val = 0.0
         lon_val = 0.0
-        if lat_col and lon_col:
-            try:
-                lat_val = float(row.get(lat_col, 0.0))
-                lon_val = float(row.get(lon_col, 0.0))
-            except:
-                pass
+        try:
+            if lat_col and row.get(lat_col) is not None:
+                lat_val = float(row.get(lat_col))
+            if lon_col and row.get(lon_col) is not None:
+                lon_val = float(row.get(lon_col))
+        except:
+            lat_val = 0.0
+            lon_val = 0.0
 
         is_depot = False
         check_text = f"{addr_val} {order_val} {raw_name}".lower()
@@ -1488,7 +1490,7 @@ if not master_df.empty:
     stops_json_str = json.dumps(stops_payload)
 
     # ----------------------------------------------------
-    # MOBILE DRIVER DECK WITH ADD, UPDATE, REOPTIMIZE
+    # MOBILE DRIVER DECK
     # ----------------------------------------------------
     deck_html = f"""
     <!DOCTYPE html>
@@ -1510,7 +1512,7 @@ if not master_df.empty:
                 position: fixed;
                 z-index: 9999;
                 left: 50%;
-                top: 20px;
+                top: 16px;
                 transform: translateX(-50%);
                 font-size: 0.95rem;
                 font-weight: 800;
@@ -1518,10 +1520,10 @@ if not master_df.empty:
             }}
             #toast.show {{
                 visibility: visible;
-                animation: fadein 0.4s, fadeout 0.4s 2.2s;
+                animation: fadein 0.3s, fadeout 0.3s 1.8s;
             }}
-            @keyframes fadein {{ from {{ top: 0; opacity: 0; }} to {{ top: 20px; opacity: 1; }} }}
-            @keyframes fadeout {{ from {{ top: 20px; opacity: 1; }} to {{ top: 0; opacity: 0; }} }}
+            @keyframes fadein {{ from {{ top: 0; opacity: 0; }} to {{ top: 16px; opacity: 1; }} }}
+            @keyframes fadeout {{ from {{ top: 16px; opacity: 1; }} to {{ top: 0; opacity: 0; }} }}
 
             .hud-bar {{
                 display: grid;
@@ -1629,7 +1631,7 @@ if not master_df.empty:
 
             .control-deck {{
                 display: grid;
-                grid-template-columns: 1fr 1fr;
+                grid-template-columns: 1fr 1fr 1fr;
                 gap: 8px;
                 margin-bottom: 8px;
             }}
@@ -1637,9 +1639,9 @@ if not master_df.empty:
                 background: #1e293b;
                 color: #cbd5e1;
                 border: 1px solid #475569;
-                padding: 11px;
+                padding: 12px 4px;
                 border-radius: 10px;
-                font-size: 0.85rem;
+                font-size: 0.82rem;
                 font-weight: 700;
                 cursor: pointer;
                 text-align: center;
@@ -1652,14 +1654,14 @@ if not master_df.empty:
                 position: fixed;
                 z-index: 10000;
                 left: 0; top: 0; width: 100%; height: 100%;
-                background: rgba(0, 0, 0, 0.75);
+                background: rgba(0, 0, 0, 0.85);
                 padding: 20px;
             }}
             .modal-content {{
                 background: #1f2937;
                 border-radius: 14px;
                 padding: 18px;
-                margin-top: 40px;
+                margin-top: 30px;
                 border: 1px solid #4b5563;
             }}
             .modal-input {{
@@ -1676,7 +1678,7 @@ if not master_df.empty:
     </head>
     <body>
 
-        <div id="toast">💾 Updated!</div>
+        <div id="toast">💾 Saved & Updated!</div>
 
         <div class="hud-bar">
             <div>
@@ -1722,12 +1724,8 @@ if not master_df.empty:
 
         <div class="control-deck">
             <button class="btn-tool" onclick="openAddModal()">➕ Add Stop</button>
-            <button class="btn-tool" onclick="reoptimizeRemaining()">🔀 Re-Optimize Route</button>
-        </div>
-
-        <div class="control-deck">
-            <button class="btn-tool" onclick="manualSync()">⚡ Update Time & Miles</button>
-            <button class="btn-tool" onclick="manualSave()">💾 Save Progress</button>
+            <button class="btn-tool" onclick="reoptimizeRemaining()">🔀 Re-Optimize</button>
+            <button class="btn-tool" onclick="manualSync()">⚡ Update Live</button>
         </div>
 
         <!-- Add Stop Modal -->
@@ -1736,11 +1734,12 @@ if not master_df.empty:
                 <h3 style="margin-top:0; color:#fff;">Add Inspection Stop</h3>
                 <input type="text" id="modal-addr" class="modal-input" placeholder="Address (Street, City, Zip)">
                 <input type="text" id="modal-order" class="modal-input" placeholder="Work Order #">
-                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px;">
-                    <button class="btn-next" style="padding:12px; font-size:1rem;" onclick="confirmAddStop(true)">Insert Next</button>
+                
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-bottom:8px;">
+                    <button class="btn-next" style="padding:12px; font-size:1rem; margin-bottom:0;" onclick="confirmAddStop(true)">Insert Next</button>
                     <button class="btn-secondary" style="padding:12px;" onclick="confirmAddStop(false)">Add to End</button>
                 </div>
-                <button class="btn-secondary btn-danger" style="width:100%; margin-top:8px; padding:10px;" onclick="closeAddModal()">Cancel</button>
+                <button class="btn-secondary btn-danger" style="width:100%; padding:10px;" onclick="closeAddModal()">Cancel</button>
             </div>
         </div>
 
@@ -1750,17 +1749,20 @@ if not master_df.empty:
 
             const savedState = localStorage.getItem("cfs_route_stops_state");
             if (savedState) {{
-                try {{ stops = JSON.parse(savedState); }} catch(e) {{}}
+                try {{
+                    const parsed = JSON.parse(savedState);
+                    if (Array.isArray(parsed) && parsed.length > 0) stops = parsed;
+                }} catch(e) {{}}
             }}
 
             let curIdx = parseInt(localStorage.getItem("cfs_route_idx") || "0", 10);
-            if (curIdx >= stops.length) curIdx = Math.max(0, stops.length - 1);
+            if (isNaN(curIdx) || curIdx >= stops.length) curIdx = Math.max(0, stops.length - 1);
 
             function showToast(msg) {{
                 const toast = document.getElementById("toast");
                 toast.innerText = msg;
                 toast.className = "show";
-                setTimeout(() => {{ toast.className = toast.className.replace("show", ""); }}, 2500);
+                setTimeout(() => {{ toast.className = toast.className.replace("show", ""); }}, 2200);
             }}
 
             function formatTime(dt) {{
@@ -1773,14 +1775,14 @@ if not master_df.empty:
                 return hrs + ':' + mins + ' ' + ampm;
             }}
 
-            function saveStops() {{
-                localStorage.setItem("cfs_route_stops_state", JSON.stringify(stops));
-                localStorage.setItem("cfs_route_idx", curIdx.toString());
-            }}
-
-            function manualSave() {{
-                saveStops();
-                showToast("💾 Progress Saved to Phone!");
+            // AUTOMATIC SAVE: Every action triggers persistent storage
+            function autoSave() {{
+                try {{
+                    localStorage.setItem("cfs_route_stops_state", JSON.stringify(stops));
+                    localStorage.setItem("cfs_route_idx", curIdx.toString());
+                }} catch(e) {{
+                    console.error("Storage error:", e);
+                }}
             }}
 
             function manualSync() {{
@@ -1847,7 +1849,7 @@ if not master_df.empty:
                 const finishDate = new Date(now.getTime() + totalHoursNeeded * 3600000);
                 document.getElementById("hud-finish").innerText = formatTime(finishDate);
 
-                saveStops();
+                autoSave();
             }}
 
             function completeStop() {{
@@ -1855,6 +1857,7 @@ if not master_df.empty:
                     stops[curIdx].status = "completed";
                     curIdx++;
                     updateDeck();
+                    showToast("✅ Stop Completed & Saved");
                 }}
             }}
 
@@ -1873,7 +1876,7 @@ if not master_df.empty:
                     stops.splice(curIdx, 1);
                     if (curIdx >= stops.length) curIdx = Math.max(0, stops.length - 1);
                     updateDeck();
-                    showToast("🗑️ Stop Deleted & Route Saved");
+                    showToast("🗑️ Stop Deleted & Saved");
                 }}
             }}
 
@@ -1884,7 +1887,6 @@ if not master_df.empty:
                 }}
             }}
 
-            // ADD STOP DIALOG
             function openAddModal() {{
                 document.getElementById("modal-addr").value = "";
                 document.getElementById("modal-order").value = "";
@@ -1903,15 +1905,19 @@ if not master_df.empty:
                     return;
                 }}
 
+                // Inherit approximate lat/lon from current stop for clustering
+                const curStop = stops[curIdx] || {{}};
                 const newStop = {{
                     row_idx: stops.length,
                     address: addr,
                     city_state: "",
                     full_dest: addr,
-                    order_num: order || "NEW-STOP",
+                    order_num: order || "ADDED-STOP",
                     planned_time: "--:--",
                     cum_miles: 0,
-                    leg_miles: 2.5,
+                    leg_miles: 3.0,
+                    lat: parseFloat(curStop.lat || 0.0),
+                    lon: parseFloat(curStop.lon || 0.0),
                     is_depot: false,
                     is_finish_leg: false,
                     status: "pending"
@@ -1930,13 +1936,13 @@ if not master_df.empty:
 
                 closeAddModal();
                 updateDeck();
-                showToast("➕ Stop Added Successfully!");
+                showToast("➕ Stop Added & Saved!");
             }}
 
-            // RE-OPTIMIZE REMAINING QUEUE FROM CURRENT STOP
+            // ROBUST RE-OPTIMIZE: Handles arbitrary addresses, missing coords, and depots
             function reoptimizeRemaining() {{
                 if (curIdx >= stops.length - 2) {{
-                    showToast("Only 1 stop remaining; route optimal.");
+                    showToast("Route already optimal!");
                     return;
                 }}
 
@@ -1945,23 +1951,44 @@ if not master_df.empty:
 
                 let remaining = stops.splice(curIdx + 1);
 
-                // Sort by distance/proximity if coordinates exist, otherwise preserve insertion
-                remaining.sort((a, b) => {{
-                    if (a.lat && b.lat) {{
-                        const curLat = stops[curIdx].lat || 38.85;
-                        const curLon = stops[curIdx].lon || -77.05;
-                        const distA = Math.hypot(a.lat - curLat, a.lon - curLon);
-                        const distB = Math.hypot(b.lat - curLat, b.lon - curLon);
-                        return distA - distB;
-                    }}
-                    return 0;
-                }});
+                // Nearest-Neighbor sequencing from current position
+                let currentLat = parseFloat(stops[curIdx].lat || 0.0);
+                let currentLon = parseFloat(stops[curIdx].lon || 0.0);
 
-                stops = stops.concat(remaining);
+                let optimized = [];
+                while (remaining.length > 0) {{
+                    let bestIdx = 0;
+                    let bestDist = Infinity;
+
+                    for (let i = 0; i < remaining.length; i++) {{
+                        let candLat = parseFloat(remaining[i].lat || 0.0);
+                        let candLon = parseFloat(remaining[i].lon || 0.0);
+
+                        let d = 0;
+                        if (currentLat !== 0 && candLat !== 0) {{
+                            d = Math.hypot(candLat - currentLat, candLon - currentLon);
+                        }} else {{
+                            // Lexical proximity fallback for addresses without GPS
+                            d = remaining[i].address.localeCompare(stops[curIdx].address);
+                        }}
+
+                        if (d < bestDist) {{
+                            bestDist = d;
+                            bestIdx = i;
+                        }}
+                    }}
+
+                    let chosen = remaining.splice(bestIdx, 1)[0];
+                    optimized.push(chosen);
+                    currentLat = parseFloat(chosen.lat || currentLat);
+                    currentLon = parseFloat(chosen.lon || currentLon);
+                }}
+
+                stops = stops.concat(optimized);
                 if (depotStop) stops.push(depotStop);
 
                 updateDeck();
-                showToast("🔀 Remaining Queue Re-Optimized!");
+                showToast("🔀 Remaining Stops Re-Optimized & Saved!");
             }}
 
             updateDeck();
