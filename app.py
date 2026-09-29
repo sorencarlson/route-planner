@@ -1395,7 +1395,6 @@ if not master_df.empty:
     if planned_total_miles <= 0:
         planned_total_miles = 342.2
 
-    # Baseline planned arrival from desktop table
     planned_finish_str = "07:13 PM"
     if time_col:
         try:
@@ -1412,34 +1411,36 @@ if not master_df.empty:
     for idx, row in target_df.iterrows():
         raw_name = str(row.get("Name") or row.get("Description") or "").strip()
         
-        addr_val = ""
+        street_val = ""
         for k in ["Address1", "Address", "Full Address", "Street", "Property Address"]:
             v = str(row.get(k) or "").strip()
             if v and v.lower() != "nan":
-                addr_val = v
+                street_val = v
                 break
-        if not addr_val and "/" in raw_name:
-            addr_val = raw_name.split("/")[0].strip()
-        elif not addr_val:
-            addr_val = raw_name or "Property Location"
+        if not street_val and "/" in raw_name:
+            street_val = raw_name.split("/")[0].strip()
+        elif not street_val:
+            street_val = raw_name or "Property Location"
 
         city_val = str(row.get("City") or row.get("Town") or row.get("Property City") or "").strip()
         state_val = str(row.get("State") or row.get("Property State") or "").strip()
         zip_val = str(row.get("Zip") or row.get("PostalCode") or "").strip()
 
-        if (not city_val or city_val.lower() == "nan") and ("," in addr_val):
-            parts = [p.strip() for p in addr_val.split(",")]
+        # Parse inline commas if fields are merged
+        if (not city_val or city_val.lower() == "nan") and ("," in street_val):
+            parts = [p.strip() for p in street_val.split(",")]
+            street_val = parts[0]
             if len(parts) >= 2:
                 city_val = parts[1]
-                if len(parts) >= 3 and not state_val:
-                    state_val = parts[2].split(" ")[0]
+            if len(parts) >= 3:
+                remainder = parts[2].split(" ")
+                state_val = remainder[0]
+                if len(remainder) > 1:
+                    zip_val = remainder[1]
 
         city_clean = "" if city_val.lower() == "nan" else city_val
-        state_clean = "" if state_val.lower() == "nan" else state_val
+        state_clean = "VA" if not state_val or state_val.lower() == "nan" else state_val
         zip_clean = "" if zip_val.lower() == "nan" else zip_val
-
-        loc_parts = [p for p in [city_clean, state_clean, zip_clean] if p]
-        city_state_str = ", ".join(loc_parts)
 
         order_val = ""
         for k in ["Order_Number", "Work_Order", "Order", "Inspection ID", "Inspection_ID"]:
@@ -1450,8 +1451,14 @@ if not master_df.empty:
         if not order_val and "/" in raw_name:
             order_val = raw_name.split("/")[-1].strip()
 
-        nav_parts = [p for p in [addr_val, city_clean, state_clean, zip_clean] if p]
-        nav_query_str = ", ".join(nav_parts)
+        # Guaranteed complete address string
+        addr_tokens = [street_val]
+        if city_clean:
+            addr_tokens.append(city_clean)
+        addr_tokens.append(state_clean)
+        if zip_clean:
+            addr_tokens.append(zip_clean)
+        full_dest_str = ", ".join([t for t in addr_tokens if t])
 
         stop_planned_time = str(row.get(time_col, "")).strip() if time_col else ""
         stop_cum_miles = 0.0
@@ -1475,7 +1482,7 @@ if not master_df.empty:
             lat_val = 0.0
             lon_val = 0.0
 
-        check_text = f"{addr_val} {order_val} {raw_name}".lower()
+        check_text = f"{street_val} {order_val} {raw_name}".lower()
         is_depot = False
         if idx == 0 or idx == total_rows - 1:
             if any(k in check_text for k in depot_keywords):
@@ -1483,9 +1490,11 @@ if not master_df.empty:
 
         stops_payload.append({
             "row_idx": idx,
-            "address": addr_val,
-            "city_state": city_state_str,
-            "full_dest": nav_query_str,
+            "street": street_val,
+            "city": city_clean,
+            "state": state_clean,
+            "zip": zip_clean,
+            "full_dest": full_dest_str,
             "order_num": order_val,
             "planned_time": stop_planned_time,
             "cum_miles": stop_cum_miles,
@@ -1507,11 +1516,11 @@ if not master_df.empty:
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
         <style>
             * {{ box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }}
-            body {{ margin: 0; padding: 4px; background-color: #0b0f19; color: #f3f4f6; }}
+            body {{ margin: 0; padding: 6px; background-color: #0b132b; color: #f3f4f6; }}
             
             #toast {{
                 visibility: hidden;
-                min-width: 260px;
+                min-width: 280px;
                 background-color: #059669;
                 color: #fff;
                 text-align: center;
@@ -1537,28 +1546,28 @@ if not master_df.empty:
                 display: grid;
                 grid-template-columns: repeat(5, 1fr);
                 background: #111827;
-                border: 1px solid #374151;
+                border: 1px solid #1f2937;
                 border-radius: 12px;
                 padding: 10px 2px;
                 margin-bottom: 12px;
                 text-align: center;
             }}
             .hud-label {{ font-size: 0.58rem; color: #9ca3af; text-transform: uppercase; font-weight: 800; margin-bottom: 2px; }}
-            .hud-val {{ font-size: 0.98rem; font-weight: 800; }}
+            .hud-val {{ font-size: 0.95rem; font-weight: 800; }}
             .c-blue {{ color: #60a5fa; }}
             .c-orange {{ color: #fb923c; }}
             .c-green {{ color: #34d399; }}
             .c-yellow {{ color: #fbbf24; }}
             .c-cyan {{ color: #38bdf8; }}
-            .hud-sep {{ border-left: 1px solid #374151; }}
+            .hud-sep {{ border-left: 1px solid #1f2937; }}
 
             .card {{
-                background: #1f2937;
-                border: 1px solid #374151;
+                background: #1c2541;
+                border: 1px solid #3a506b;
                 border-radius: 14px;
                 padding: 16px;
                 margin-bottom: 12px;
-                box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+                box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
             }}
             .card-badge {{
                 display: inline-block;
@@ -1572,10 +1581,10 @@ if not master_df.empty:
             .badge-inspection {{ background: #1e3a8a; color: #93c5fd; }}
             .badge-depot {{ background: #4b5563; color: #f3f4f6; }}
 
-            .card-title {{ font-size: 1.35rem; font-weight: 800; color: #ffffff; margin: 0 0 6px 0; line-height: 1.25; }}
-            .card-city {{ font-size: 1.05rem; color: #93c5fd; margin-bottom: 12px; font-weight: 700; }}
+            .card-title {{ font-size: 1.35rem; font-weight: 800; color: #ffffff; margin: 0 0 4px 0; line-height: 1.25; }}
+            .card-city {{ font-size: 1.05rem; color: #60a5fa; margin-bottom: 12px; font-weight: 700; }}
             .card-info-box {{
-                background: #111827;
+                background: #0b132b;
                 border-radius: 8px;
                 padding: 10px 12px;
                 margin-top: 8px;
@@ -1591,7 +1600,7 @@ if not master_df.empty:
                 color: #ffffff;
                 text-align: center;
                 text-decoration: none;
-                padding: 14px;
+                padding: 15px;
                 border-radius: 12px;
                 font-size: 1.15rem;
                 font-weight: 800;
@@ -1606,7 +1615,7 @@ if not master_df.empty:
                 color: #ffffff;
                 padding: 18px;
                 border-radius: 14px;
-                font-size: 1.35rem;
+                font-size: 1.3rem;
                 font-weight: 900;
                 letter-spacing: 0.5px;
                 border: none;
@@ -1624,18 +1633,18 @@ if not master_df.empty:
                 margin-bottom: 10px;
             }}
             .btn-secondary {{
-                background: #374151;
+                background: #1f2937;
                 color: #d1d5db;
                 padding: 12px 6px;
                 border-radius: 10px;
                 font-size: 0.85rem;
                 font-weight: 700;
-                border: none;
+                border: 1px solid #374151;
                 cursor: pointer;
                 text-align: center;
             }}
-            .btn-warn {{ background: #7c2d12; color: #fecaca; }}
-            .btn-danger {{ background: #881337; color: #fecdd3; }}
+            .btn-warn {{ background: #7c2d12; color: #fecaca; border: none; }}
+            .btn-danger {{ background: #881337; color: #fecdd3; border: none; }}
 
             .control-deck {{
                 display: grid;
@@ -1644,9 +1653,9 @@ if not master_df.empty:
                 margin-bottom: 8px;
             }}
             .btn-tool {{
-                background: #1e293b;
+                background: #1c2541;
                 color: #cbd5e1;
-                border: 1px solid #475569;
+                border: 1px solid #3a506b;
                 padding: 12px 4px;
                 border-radius: 10px;
                 font-size: 0.82rem;
@@ -1654,7 +1663,7 @@ if not master_df.empty:
                 cursor: pointer;
                 text-align: center;
             }}
-            .btn-tool:active {{ background: #334155; }}
+            .btn-tool:active {{ background: #3a506b; }}
 
             #add-modal {{
                 display: none;
@@ -1662,24 +1671,24 @@ if not master_df.empty:
                 z-index: 10000;
                 left: 0; top: 0; width: 100%; height: 100%;
                 background: rgba(0, 0, 0, 0.85);
-                padding: 20px;
+                padding: 18px;
             }}
             .modal-content {{
-                background: #1f2937;
+                background: #1c2541;
                 border-radius: 14px;
                 padding: 18px;
-                margin-top: 30px;
-                border: 1px solid #4b5563;
+                margin-top: 24px;
+                border: 1px solid #3a506b;
             }}
             .modal-input {{
                 width: 100%;
                 padding: 12px;
-                margin-bottom: 12px;
+                margin-bottom: 10px;
                 border-radius: 8px;
                 border: 1px solid #4b5563;
-                background: #111827;
+                background: #0b132b;
                 color: #fff;
-                font-size: 1rem;
+                font-size: 0.95rem;
             }}
         </style>
     </head>
@@ -1738,13 +1747,15 @@ if not master_df.empty:
         <div id="add-modal">
             <div class="modal-content">
                 <h3 style="margin-top:0; color:#fff;">Add Inspection Stop</h3>
-                <input type="text" id="modal-addr" class="modal-input" placeholder="Address (Street, City, Zip)">
+                <input type="text" id="modal-street" class="modal-input" placeholder="Street Address (e.g., 12253 Piney Lane)">
+                <div style="display:grid; grid-template-columns: 2fr 1fr 1fr; gap:6px;">
+                    <input type="text" id="modal-city" class="modal-input" placeholder="City (e.g., Remington)">
+                    <input type="text" id="modal-state" class="modal-input" value="VA">
+                    <input type="text" id="modal-zip" class="modal-input" placeholder="Zip">
+                </div>
                 <input type="text" id="modal-order" class="modal-input" placeholder="Work Order #">
                 
-                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-bottom:8px;">
-                    <button class="btn-next" style="padding:12px; font-size:1rem; margin-bottom:0;" onclick="confirmAddStop(true)">Insert Next</button>
-                    <button class="btn-secondary" style="padding:12px;" onclick="confirmAddStop(false)">Add to End</button>
-                </div>
+                <button id="modal-submit-btn" class="btn-next" style="padding:14px; font-size:1.05rem; margin-bottom:8px;" onclick="confirmAddStop()">Add Stop & Geocode</button>
                 <button class="btn-secondary btn-danger" style="width:100%; padding:10px;" onclick="closeAddModal()">Cancel</button>
             </div>
         </div>
@@ -1755,7 +1766,6 @@ if not master_df.empty:
             const baselineFinishStr = "{planned_finish_str}";
             const currentSig = "{route_sig}";
 
-            // Reset storage when new route is loaded
             const savedSig = localStorage.getItem("cfs_route_signature");
             if (savedSig !== currentSig) {{
                 localStorage.removeItem("cfs_route_stops_state");
@@ -1775,7 +1785,6 @@ if not master_df.empty:
             let curIdx = parseInt(localStorage.getItem("cfs_route_idx") || "0", 10);
             if (isNaN(curIdx) || curIdx >= stops.length) curIdx = 0;
 
-            // Start directly on first real inspection stop (skip driveway depot)
             if (curIdx === 0 && stops[0].is_depot && stops.length > 1) {{
                 curIdx = 1;
             }}
@@ -1797,6 +1806,18 @@ if not master_df.empty:
                 return hrs + ':' + mins + ' ' + ampm;
             }}
 
+            function haversineMiles(lat1, lon1, lat2, lon2) {{
+                if (!lat1 || !lon1 || !lat2 || !lon2) return 5.0;
+                const R = 3958.8; // Earth radius in miles
+                const dLat = (lat2 - lat1) * Math.PI / 180;
+                const dLon = (lon2 - lon1) * Math.PI / 180;
+                const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                          Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                          Math.sin(dLon/2) * Math.sin(dLon/2);
+                const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+                return (R * c) * 1.25; // 1.25 road winding factor
+            }}
+
             function autoSave() {{
                 try {{
                     localStorage.setItem("cfs_route_stops_state", JSON.stringify(stops));
@@ -1805,7 +1826,6 @@ if not master_df.empty:
             }}
 
             function manualSync() {{
-                // Force engaging Live Driving Mode on manual tap
                 localStorage.setItem("cfs_route_underway", "true");
                 updateDeck();
                 showToast("⚡ Office ETA Recalibrated to Live Clock!");
@@ -1833,7 +1853,7 @@ if not master_df.empty:
 
                 document.getElementById("hud-left").innerText = inspsLeft;
 
-                // 1. DRIVEN MILES
+                // 1. Driven miles
                 let drivenMiles = 0.0;
                 for (let i = 0; i < curIdx; i++) {{
                     if (stops[i].status !== "deleted") {{
@@ -1842,24 +1862,32 @@ if not master_df.empty:
                 }}
                 document.getElementById("hud-driven").innerText = Math.round(drivenMiles) + " mi";
 
-                // 2. TO OFFICE MILES
+                // 2. Real miles back to office
                 let toOfficeMiles = 0.0;
                 for (let i = curIdx; i < stops.length; i++) {{
                     if (stops[i].status !== "deleted") {{
                         toOfficeMiles += parseFloat(stops[i].leg_miles || 0.0);
                     }}
                 }}
+
+                // Distance sanity check against final depot
+                const lastDepot = stops[stops.length - 1];
+                if (lastDepot && lastDepot.is_depot && s.lat && s.lon && lastDepot.lat && lastDepot.lon) {{
+                    const directOfficeDist = haversineMiles(s.lat, s.lon, lastDepot.lat, lastDepot.lon);
+                    if (toOfficeMiles < directOfficeDist) {{
+                        toOfficeMiles = directOfficeDist + (inspsLeft * 3.5);
+                    }}
+                }}
+
                 if (curIdx <= 1 && drivenMiles === 0 && baselineTotalMiles > 0) toOfficeMiles = baselineTotalMiles;
                 document.getElementById("hud-to-office").innerText = Math.round(toOfficeMiles) + " mi";
 
-                // 3. OFFICE ETA (Standby vs Live Departure State)
+                // 3. Office ETA
                 const isUnderway = (curIdx > 1) || (drivenMiles > 0) || (localStorage.getItem("cfs_route_underway") === "true");
 
                 if (!isUnderway) {{
-                    // Standby Mode: Lock to scheduled finish until tires actually roll
                     document.getElementById("hud-finish").innerText = baselineFinishStr;
                 }} else {{
-                    // Active Live Mode: Clock NOW + remaining travel time + inspection buffers
                     const remainingDriveMinutes = (toOfficeMiles / 42.0) * 60.0;
                     const remainingInspectionMinutes = inspsLeft * 4.0;
                     const totalMinutesRemaining = remainingDriveMinutes + remainingInspectionMinutes;
@@ -1869,12 +1897,24 @@ if not master_df.empty:
                     document.getElementById("hud-finish").innerText = formatTime(arrivalAtOffice);
                 }}
 
-                document.getElementById("disp-addr").innerText = s.address || "Property Address";
-                document.getElementById("disp-city").innerText = s.city_state ? ("📍 " + s.city_state) : "";
+                // Card display with explicit street, city, state, zip
+                document.getElementById("disp-addr").innerText = s.street || s.address || "Property Address";
+                const cityStateLine = [s.city, s.state, s.zip].filter(Boolean).join(", ");
+                document.getElementById("disp-city").innerText = cityStateLine ? ("📍 " + cityStateLine) : "";
                 document.getElementById("disp-order").innerText = s.order_num || (s.is_depot ? "Base Depot" : "N/A");
 
-                const mapsUrl = "https://www.google.com/maps/dir/?api=1&destination=" + encodeURIComponent(s.full_dest || s.address) + "&travelmode=driving";
-                document.getElementById("nav-link").href = mapsUrl;
+                // Target exact coordinates, or fall back to full verified string
+                let navTarget = "";
+                const sLat = parseFloat(s.lat || 0.0);
+                const sLon = parseFloat(s.lon || 0.0);
+
+                if (sLat !== 0 && sLon !== 0 && !isNaN(sLat) && !isNaN(sLon)) {{
+                    navTarget = sLat + "," + sLon;
+                }} else {{
+                    navTarget = encodeURIComponent(s.full_dest || (s.street + ", " + cityStateLine));
+                }}
+
+                document.getElementById("nav-link").href = "https://www.google.com/maps/dir/?api=1&destination=" + navTarget + "&travelmode=driving";
 
                 const btnNext = document.getElementById("btn-next-action");
                 if (curIdx === stops.length - 2 && stops[stops.length - 1].is_depot) {{
@@ -1890,7 +1930,6 @@ if not master_df.empty:
 
             function completeStop() {{
                 if (curIdx < stops.length - 1) {{
-                    // First completed stop officially activates live driving mode
                     localStorage.setItem("cfs_route_underway", "true");
                     stops[curIdx].status = "completed";
                     curIdx++;
@@ -1930,7 +1969,10 @@ if not master_df.empty:
             }}
 
             function openAddModal() {{
-                document.getElementById("modal-addr").value = "";
+                document.getElementById("modal-street").value = "";
+                document.getElementById("modal-city").value = "";
+                document.getElementById("modal-state").value = "VA";
+                document.getElementById("modal-zip").value = "";
                 document.getElementById("modal-order").value = "";
                 document.getElementById("add-modal").style.display = "block";
             }}
@@ -1939,48 +1981,72 @@ if not master_df.empty:
                 document.getElementById("add-modal").style.display = "none";
             }}
 
-            function confirmAddStop(insertImmediate) {{
-                const addr = document.getElementById("modal-addr").value.trim();
+            async function confirmAddStop() {{
+                const street = document.getElementById("modal-street").value.trim();
+                const city = document.getElementById("modal-city").value.trim();
+                const state = document.getElementById("modal-state").value.trim() || "VA";
+                const zip = document.getElementById("modal-zip").value.trim();
                 const order = document.getElementById("modal-order").value.trim();
-                if (!addr) {{
-                    alert("Please enter an address");
+
+                if (!street) {{
+                    alert("Please enter a street address");
                     return;
                 }}
 
-                const curStop = stops[curIdx] || {{}};
+                const submitBtn = document.getElementById("modal-submit-btn");
+                submitBtn.innerText = "Geocoding Address...";
+
+                const fullDest = [street, city, state, zip].filter(Boolean).join(", ");
+                let lat = 0.0;
+                let lon = 0.0;
+
+                try {{
+                    // Free OpenStreetMap Geocoding
+                    const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${{encodeURIComponent(fullDest)}}&format=json&limit=1`);
+                    const data = await res.json();
+                    if (data && data.length > 0) {{
+                        lat = parseFloat(data[0].lat);
+                        lon = parseFloat(data[0].lon);
+                    }}
+                }} catch (e) {{
+                    console.error("Geocode failed", e);
+                }}
+
+                submitBtn.innerText = "Add Stop & Geocode";
+
                 const newStop = {{
                     row_idx: stops.length,
-                    address: addr,
-                    city_state: "",
-                    full_dest: addr,
+                    street: street,
+                    city: city,
+                    state: state,
+                    zip: zip,
+                    full_dest: fullDest,
                     order_num: order || "ADDED-STOP",
                     planned_time: "--:--",
                     cum_miles: 0,
-                    leg_miles: 3.0,
-                    lat: parseFloat(curStop.lat || 0.0),
-                    lon: parseFloat(curStop.lon || 0.0),
+                    leg_miles: 3.5,
+                    lat: lat,
+                    lon: lon,
                     is_depot: false,
                     is_finish_leg: false,
                     status: "pending"
                 }};
 
-                if (insertImmediate) {{
-                    stops.splice(curIdx + 1, 0, newStop);
+                // Insert into remaining pending stops list
+                const lastIdx = stops.length - 1;
+                if (stops[lastIdx] && stops[lastIdx].is_depot) {{
+                    stops.splice(lastIdx, 0, newStop);
                 }} else {{
-                    const lastIdx = stops.length - 1;
-                    if (stops[lastIdx] && stops[lastIdx].is_depot) {{
-                        stops.splice(lastIdx, 0, newStop);
-                    }} else {{
-                        stops.push(newStop);
-                    }}
+                    stops.push(newStop);
                 }}
 
                 closeAddModal();
                 updateDeck();
-                showToast("➕ Stop Added & Saved!");
+                showToast("➕ Stop Added with Full Address!");
             }}
 
             function reoptimizeRemaining() {{
+                // Re-optimizes all pending stops ahead of curIdx
                 if (curIdx >= stops.length - 2) {{
                     showToast("Route already optimal!");
                     return;
@@ -1989,6 +2055,7 @@ if not master_df.empty:
                 let hasDepot = stops[stops.length - 1].is_depot;
                 let depotStop = hasDepot ? stops.pop() : null;
 
+                // Take all stops after current
                 let remaining = stops.splice(curIdx + 1);
 
                 let currentLat = parseFloat(stops[curIdx].lat || 0.0);
@@ -2005,9 +2072,9 @@ if not master_df.empty:
 
                         let d = 0;
                         if (currentLat !== 0 && candLat !== 0) {{
-                            d = Math.hypot(candLat - currentLat, candLon - currentLon);
+                            d = haversineMiles(currentLat, currentLon, candLat, candLon);
                         }} else {{
-                            d = remaining[i].address.localeCompare(stops[curIdx].address);
+                            d = remaining[i].full_dest.localeCompare(stops[curIdx].full_dest);
                         }}
 
                         if (d < bestDist) {{
@@ -2017,16 +2084,23 @@ if not master_df.empty:
                     }}
 
                     let chosen = remaining.splice(bestIdx, 1)[0];
+                    chosen.leg_miles = bestDist === Infinity ? 4.0 : Math.round(bestDist * 10) / 10;
                     optimized.push(chosen);
                     currentLat = parseFloat(chosen.lat || currentLat);
                     currentLon = parseFloat(chosen.lon || currentLon);
                 }}
 
-                stops = stops.concat(optimized);
-                if (depotStop) stops.push(depotStop);
+                // Calculate return distance to depot
+                if (depotStop) {{
+                    if (currentLat !== 0 && depotStop.lat) {{
+                        depotStop.leg_miles = Math.round(haversineMiles(currentLat, currentLon, depotStop.lat, depotStop.lon) * 10) / 10;
+                    }}
+                    optimized.push(depotStop);
+                }}
 
+                stops = stops.concat(optimized);
                 updateDeck();
-                showToast("🔀 Remaining Stops Re-Optimized & Saved!");
+                showToast("🔀 All Remaining Stops Geographically Re-Ordered!");
             }}
 
             updateDeck();
@@ -2036,4 +2110,4 @@ if not master_df.empty:
     </html>
     """
 
-    components.html(deck_html, height=620, scrolling=False)
+    components.html(deck_html, height=640, scrolling=False)
