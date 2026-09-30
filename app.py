@@ -1426,7 +1426,7 @@ if not master_df.empty:
         state_val = str(row.get("State") or row.get("Property State") or "").strip()
         zip_val = str(row.get("Zip") or row.get("PostalCode") or "").strip()
 
-        # Parse inline commas if fields are merged
+        # Preserve raw parsed values without overwriting
         if (not city_val or city_val.lower() == "nan") and ("," in street_val):
             parts = [p.strip() for p in street_val.split(",")]
             street_val = parts[0]
@@ -1451,7 +1451,7 @@ if not master_df.empty:
         if not order_val and "/" in raw_name:
             order_val = raw_name.split("/")[-1].strip()
 
-        # Guaranteed complete address string
+        # Clean address construction without internal IDs
         addr_tokens = [street_val]
         if city_clean:
             addr_tokens.append(city_clean)
@@ -1503,7 +1503,9 @@ if not master_df.empty:
             "lon": lon_val,
             "is_depot": is_depot,
             "is_finish_leg": (idx == total_rows - 1 and is_depot),
-            "status": "pending"
+            "status": "pending",
+            "arrived_at": None,
+            "service_minutes": 5.0
         })
 
     stops_json_str = json.dumps(stops_payload)
@@ -1537,7 +1539,7 @@ if not master_df.empty:
             }}
             #toast.show {{
                 visibility: visible;
-                animation: fadein 0.3s, fadeout 0.3s 1.8s;
+                animation: fadein 0.3s, fadeout 0.3s 2.2s;
             }}
             @keyframes fadein {{ from {{ top: 0; opacity: 0; }} to {{ top: 16px; opacity: 1; }} }}
             @keyframes fadeout {{ from {{ top: 16px; opacity: 1; }} to {{ top: 0; opacity: 0; }} }}
@@ -1658,7 +1660,7 @@ if not master_df.empty:
                 border: 1px solid #3a506b;
                 padding: 12px 4px;
                 border-radius: 10px;
-                font-size: 0.82rem;
+                font-size: 0.80rem;
                 font-weight: 700;
                 cursor: pointer;
                 text-align: center;
@@ -1726,6 +1728,7 @@ if not master_df.empty:
             
             <div class="card-info-box">
                 <div class="info-line"><span class="info-bold">Work Order:</span> <span id="disp-order">--</span></div>
+                <div class="info-line" id="timer-box" style="display:none;"><span class="info-bold">Time On Site:</span> <span id="disp-timer">0:00</span></div>
             </div>
         </div>
 
@@ -1739,9 +1742,9 @@ if not master_df.empty:
         </div>
 
         <div class="control-deck">
+            <button class="btn-tool" onclick="updateLiveProgress()">⚡ Update (Sync)</button>
+            <button class="btn-tool" onclick="reoptimizeFromCurrentGps()">🔀 Re-Optimize</button>
             <button class="btn-tool" onclick="openAddModal()">➕ Add Stop</button>
-            <button class="btn-tool" onclick="reoptimizeRemaining()">🔀 Re-Optimize</button>
-            <button class="btn-tool" onclick="manualSync()">⚡ Update Live</button>
         </div>
 
         <div id="add-modal">
@@ -1766,11 +1769,12 @@ if not master_df.empty:
             const baselineFinishStr = "{planned_finish_str}";
             const currentSig = "{route_sig}";
 
+            // Purge cache if signature changes on desktop
             const savedSig = localStorage.getItem("cfs_route_signature");
             if (savedSig !== currentSig) {{
                 localStorage.removeItem("cfs_route_stops_state");
                 localStorage.removeItem("cfs_route_idx");
-                localStorage.removeItem("cfs_route_underway");
+                localStorage.removeItem("cfs_banked_minutes");
                 localStorage.setItem("cfs_route_signature", currentSig);
             }}
 
@@ -1789,11 +1793,29 @@ if not master_df.empty:
                 curIdx = 1;
             }}
 
+            let bankedMinutes = parseFloat(localStorage.getItem("cfs_banked_minutes") || "0.0");
+            let liveCoords = null;
+
+            // Start hardware GPS tracking
+            if (navigator.geolocation) {{
+                navigator.geolocation.watchPosition(
+                    (pos) => {{
+                        liveCoords = {{
+                            lat: pos.coords.latitude,
+                            lon: pos.coords.longitude,
+                            speedMph: (pos.coords.speed || 0) * 2.23694
+                        }};
+                    }},
+                    (err) => {{ console.warn("GPS telemetry unavailable", err); }},
+                    {{ enableHighAccuracy: true, maximumAge: 3000 }}
+                );
+            }}
+
             function showToast(msg) {{
                 const toast = document.getElementById("toast");
                 toast.innerText = msg;
                 toast.className = "show";
-                setTimeout(() => {{ toast.className = toast.className.replace("show", ""); }}, 2200);
+                setTimeout(() => {{ toast.className = toast.className.replace("show", ""); }}, 2400);
             }}
 
             function formatTime(dt) {{
@@ -1806,29 +1828,12 @@ if not master_df.empty:
                 return hrs + ':' + mins + ' ' + ampm;
             }}
 
-            function haversineMiles(lat1, lon1, lat2, lon2) {{
-                if (!lat1 || !lon1 || !lat2 || !lon2) return 5.0;
-                const R = 3958.8; // Earth radius in miles
-                const dLat = (lat2 - lat1) * Math.PI / 180;
-                const dLon = (lon2 - lon1) * Math.PI / 180;
-                const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                          Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-                          Math.sin(dLon/2) * Math.sin(dLon/2);
-                const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-                return (R * c) * 1.25; // 1.25 road winding factor
-            }}
-
             function autoSave() {{
                 try {{
                     localStorage.setItem("cfs_route_stops_state", JSON.stringify(stops));
                     localStorage.setItem("cfs_route_idx", curIdx.toString());
+                    localStorage.setItem("cfs_banked_minutes", bankedMinutes.toString());
                 }} catch(e) {{}}
-            }}
-
-            function manualSync() {{
-                localStorage.setItem("cfs_route_underway", "true");
-                updateDeck();
-                showToast("⚡ Office ETA Recalibrated to Live Clock!");
             }}
 
             function updateDeck() {{
@@ -1837,6 +1842,10 @@ if not master_df.empty:
 
                 const s = stops[curIdx];
 
+                if (!s.arrived_at && !s.is_depot && s.status === "pending") {{
+                    s.arrived_at = Date.now();
+                }}
+
                 let activeInsps = stops.filter(st => !st.is_depot && st.status !== "deleted");
                 let inspsLeft = stops.slice(curIdx).filter(st => !st.is_depot && st.status === "pending").length;
 
@@ -1844,11 +1853,13 @@ if not master_df.empty:
                     document.getElementById("hud-stop").innerText = s.is_finish_leg ? "END" : "START";
                     document.getElementById("disp-badge").className = "card-badge badge-depot";
                     document.getElementById("disp-badge").innerText = s.is_finish_leg ? "🏁 RETURN TO BASE" : "DEPARTURE BASE";
+                    document.getElementById("timer-box").style.display = "none";
                 }} else {{
                     let currentActiveNumber = stops.slice(0, curIdx + 1).filter(st => !st.is_depot && st.status !== "deleted").length;
                     document.getElementById("hud-stop").innerText = currentActiveNumber + "/" + activeInsps.length;
                     document.getElementById("disp-badge").className = "card-badge badge-inspection";
                     document.getElementById("disp-badge").innerText = "INSPECTION #" + currentActiveNumber + " OF " + activeInsps.length;
+                    document.getElementById("timer-box").style.display = "block";
                 }}
 
                 document.getElementById("hud-left").innerText = inspsLeft;
@@ -1862,59 +1873,60 @@ if not master_df.empty:
                 }}
                 document.getElementById("hud-driven").innerText = Math.round(drivenMiles) + " mi";
 
-                // 2. Real miles back to office
+                // 2. Remaining miles
                 let toOfficeMiles = 0.0;
                 for (let i = curIdx; i < stops.length; i++) {{
                     if (stops[i].status !== "deleted") {{
                         toOfficeMiles += parseFloat(stops[i].leg_miles || 0.0);
                     }}
                 }}
-
-                // Distance sanity check against final depot
-                const lastDepot = stops[stops.length - 1];
-                if (lastDepot && lastDepot.is_depot && s.lat && s.lon && lastDepot.lat && lastDepot.lon) {{
-                    const directOfficeDist = haversineMiles(s.lat, s.lon, lastDepot.lat, lastDepot.lon);
-                    if (toOfficeMiles < directOfficeDist) {{
-                        toOfficeMiles = directOfficeDist + (inspsLeft * 3.5);
-                    }}
-                }}
-
                 if (curIdx <= 1 && drivenMiles === 0 && baselineTotalMiles > 0) toOfficeMiles = baselineTotalMiles;
                 document.getElementById("hud-to-office").innerText = Math.round(toOfficeMiles) + " mi";
 
-                // 3. Office ETA
+                // 3. Dynamic split-profile ETA
                 const isUnderway = (curIdx > 1) || (drivenMiles > 0) || (localStorage.getItem("cfs_route_underway") === "true");
 
                 if (!isUnderway) {{
                     document.getElementById("hud-finish").innerText = baselineFinishStr;
                 }} else {{
-                    const remainingDriveMinutes = (toOfficeMiles / 42.0) * 60.0;
-                    const remainingInspectionMinutes = inspsLeft * 4.0;
-                    const totalMinutesRemaining = remainingDriveMinutes + remainingInspectionMinutes;
+                    let totalRemainingDriveMinutes = 0.0;
+
+                    for (let i = curIdx; i < stops.length; i++) {{
+                        if (stops[i].status !== "deleted") {{
+                            let legDist = parseFloat(stops[i].leg_miles || 0.0);
+                            let legSpeed = (stops[i].is_depot || legDist > 25.0) ? 65.0 : 38.0;
+                            totalRemainingDriveMinutes += (legDist / legSpeed) * 60.0;
+                        }}
+                    }}
+
+                    let totalRemainingInspectionMinutes = inspsLeft * 5.0;
+                    
+                    let activeDwellDeduction = 0.0;
+                    if (s.arrived_at && !s.is_depot) {{
+                        let elapsedMinutes = (Date.now() - s.arrived_at) / 60000.0;
+                        activeDwellDeduction = Math.min(5.0, elapsedMinutes);
+                        if (elapsedMinutes > 5.0) {{
+                            totalRemainingInspectionMinutes += (elapsedMinutes - 5.0);
+                        }}
+                    }}
+
+                    let netRemainingMinutes = totalRemainingDriveMinutes + totalRemainingInspectionMinutes - bankedMinutes - activeDwellDeduction;
+                    if (netRemainingMinutes < 0) netRemainingMinutes = 0;
 
                     const liveNow = new Date();
-                    const arrivalAtOffice = new Date(liveNow.getTime() + (totalMinutesRemaining * 60000));
+                    const arrivalAtOffice = new Date(liveNow.getTime() + (netRemainingMinutes * 60000));
                     document.getElementById("hud-finish").innerText = formatTime(arrivalAtOffice);
                 }}
 
-                // Card display with explicit street, city, state, zip
-                document.getElementById("disp-addr").innerText = s.street || s.address || "Property Address";
+                // Explicit Work Order Address Display
+                document.getElementById("disp-addr").innerText = s.street || "Property Address";
                 const cityStateLine = [s.city, s.state, s.zip].filter(Boolean).join(", ");
                 document.getElementById("disp-city").innerText = cityStateLine ? ("📍 " + cityStateLine) : "";
                 document.getElementById("disp-order").innerText = s.order_num || (s.is_depot ? "Base Depot" : "N/A");
 
-                // Target exact coordinates, or fall back to full verified string
-                let navTarget = "";
-                const sLat = parseFloat(s.lat || 0.0);
-                const sLon = parseFloat(s.lon || 0.0);
-
-                if (sLat !== 0 && sLon !== 0 && !isNaN(sLat) && !isNaN(sLon)) {{
-                    navTarget = sLat + "," + sLon;
-                }} else {{
-                    navTarget = encodeURIComponent(s.full_dest || (s.street + ", " + cityStateLine));
-                }}
-
-                document.getElementById("nav-link").href = "https://www.google.com/maps/dir/?api=1&destination=" + navTarget + "&travelmode=driving";
+                // Route literal verified text to Google Maps
+                let navQuery = encodeURIComponent((s.street ? (s.street + ", ") : "") + cityStateLine);
+                document.getElementById("nav-link").href = "https://www.google.com/maps/dir/?api=1&destination=" + navQuery + "&travelmode=driving";
 
                 const btnNext = document.getElementById("btn-next-action");
                 if (curIdx === stops.length - 2 && stops[stops.length - 1].is_depot) {{
@@ -1931,10 +1943,19 @@ if not master_df.empty:
             function completeStop() {{
                 if (curIdx < stops.length - 1) {{
                     localStorage.setItem("cfs_route_underway", "true");
-                    stops[curIdx].status = "completed";
+                    const s = stops[curIdx];
+                    s.status = "completed";
+
+                    // Bank on-site delta time
+                    if (s.arrived_at && !s.is_depot) {{
+                        let elapsedMin = (Date.now() - s.arrived_at) / 60000.0;
+                        let savedMin = 5.0 - elapsedMin;
+                        bankedMinutes += savedMin;
+                    }}
+
                     curIdx++;
                     updateDeck();
-                    showToast("✅ Stop Completed & Saved");
+                    showToast("✅ Stop Completed & Time Banked");
                 }}
             }}
 
@@ -1966,6 +1987,131 @@ if not master_df.empty:
                     }}
                     updateDeck();
                 }}
+            }}
+
+            // ⚡ UPDATE: Reads live hardware GPS and recalibrates remaining chain
+            async function updateLiveProgress() {{
+                localStorage.setItem("cfs_route_underway", "true");
+                showToast("⚡ Querying Real-Time Road Network...");
+
+                if (navigator.geolocation) {{
+                    navigator.geolocation.getCurrentPosition(async (pos) => {{
+                        const curLat = pos.coords.latitude;
+                        const curLon = pos.coords.longitude;
+
+                        // Chain coordinates from current GPS through remaining stops
+                        let coordChain = [`${{curLon}},${{curLat}}`];
+                        let activeRemaining = [];
+
+                        for (let i = curIdx; i < stops.length; i++) {{
+                            if (stops[i].status !== "deleted" && stops[i].lat && stops[i].lon) {{
+                                coordChain.push(`${{stops[i].lon}},${{stops[i].lat}}`);
+                                activeRemaining.push(stops[i]);
+                            }}
+                        }}
+
+                        if (coordChain.length >= 2) {{
+                            try {{
+                                const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${{coordChain.join(";")?overview=false}}`;
+                                const res = await fetch(osrmUrl);
+                                const data = await res.json();
+                                if (data && data.routes && data.routes.length > 0) {{
+                                    const totalMeters = data.routes[0].distance;
+                                    const totalSeconds = data.routes[0].duration;
+                                    const liveRemainingMiles = totalMeters * 0.000621371;
+                                    const liveDriveMinutes = totalSeconds / 60.0;
+
+                                    if (activeRemaining.length > 0) {{
+                                        activeRemaining[0].leg_miles = Math.round(liveRemainingMiles * 10) / 10;
+                                    }}
+
+                                    updateDeck();
+                                    showToast("⚡ Highway Telemetry Recalibrated!");
+                                    return;
+                                }}
+                            }} catch(e) {{
+                                console.warn("OSRM live sync fallback", e);
+                            }}
+                        }}
+                        updateDeck();
+                        showToast("⚡ Live Clock Recalibrated!");
+                    }}, () => {{
+                        updateDeck();
+                        showToast("⚡ Recalibrated!");
+                    }});
+                }} else {{
+                    updateDeck();
+                }}
+            }}
+
+            // 🔀 RE-OPTIMIZE: Road-network matrix sequencing from current GPS location
+            async function reoptimizeFromCurrentGps() {{
+                if (curIdx >= stops.length - 2) {{
+                    showToast("Route already optimal!");
+                    return;
+                }}
+
+                showToast("🔀 Solving Real Road-Network Sequence...");
+
+                let startLat = stops[curIdx].lat;
+                let startLon = stops[curIdx].lon;
+
+                if (liveCoords && liveCoords.lat) {{
+                    startLat = liveCoords.lat;
+                    startLon = liveCoords.lon;
+                }}
+
+                let hasDepot = stops[stops.length - 1].is_depot;
+                let depotStop = hasDepot ? stops.pop() : null;
+
+                let remaining = stops.splice(curIdx + 1);
+
+                // Build OSRM Distance/Time Table coordinates list
+                let coordList = [`${{startLon}},${{startLat}}`];
+                remaining.forEach(s => coordList.push(`${{s.lon}},${{s.lat}}`));
+
+                try {{
+                    const tableUrl = `https://router.project-osrm.org/table/v1/driving/${{coordList.join(";")?sources=all&destinations=all}}`;
+                    const res = await fetch(tableUrl);
+                    const matrixData = await res.json();
+
+                    if (matrixData && matrixData.durations) {{
+                        let durations = matrixData.durations;
+                        let unvisited = remaining.map((s, i) => ({{ stop: s, matrixIdx: i + 1 }}));
+                        let currentMatrixIdx = 0;
+                        let optimized = [];
+
+                        while (unvisited.length > 0) {{
+                            let bestIndex = 0;
+                            let minDuration = Infinity;
+
+                            for (let j = 0; j < unvisited.length; j++) {{
+                                let d = durations[currentMatrixIdx][unvisited[j].matrixIdx];
+                                if (d < minDuration) {{
+                                    minDuration = d;
+                                    bestIndex = j;
+                                }}
+                            }}
+
+                            let nextStopObj = unvisited.splice(bestIndex, 1)[0];
+                            currentMatrixIdx = nextStopObj.matrixIdx;
+                            optimized.push(nextStopObj.stop);
+                        }}
+
+                        if (depotStop) optimized.push(depotStop);
+                        stops = stops.concat(optimized);
+                        updateDeck();
+                        showToast("🔀 Road Network Re-Optimization Complete!");
+                        return;
+                    }}
+                }} catch(e) {{
+                    console.error("OSRM matrix solve failed, falling back", e);
+                }}
+
+                if (depotStop) remaining.push(depotStop);
+                stops = stops.concat(remaining);
+                updateDeck();
+                showToast("Route sequence preserved");
             }}
 
             function openAddModal() {{
@@ -2001,7 +2147,6 @@ if not master_df.empty:
                 let lon = 0.0;
 
                 try {{
-                    // Free OpenStreetMap Geocoding
                     const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${{encodeURIComponent(fullDest)}}&format=json&limit=1`);
                     const data = await res.json();
                     if (data && data.length > 0) {{
@@ -2024,15 +2169,16 @@ if not master_df.empty:
                     order_num: order || "ADDED-STOP",
                     planned_time: "--:--",
                     cum_miles: 0,
-                    leg_miles: 3.5,
+                    leg_miles: 4.5,
                     lat: lat,
                     lon: lon,
                     is_depot: false,
                     is_finish_leg: false,
-                    status: "pending"
+                    status: "pending",
+                    arrived_at: null,
+                    service_minutes: 5.0
                 }};
 
-                // Insert into remaining pending stops list
                 const lastIdx = stops.length - 1;
                 if (stops[lastIdx] && stops[lastIdx].is_depot) {{
                     stops.splice(lastIdx, 0, newStop);
@@ -2042,72 +2188,27 @@ if not master_df.empty:
 
                 closeAddModal();
                 updateDeck();
-                showToast("➕ Stop Added with Full Address!");
+                showToast("➕ Stop Added! Tap Re-Optimize to Sequence");
             }}
 
-            function reoptimizeRemaining() {{
-                // Re-optimizes all pending stops ahead of curIdx
-                if (curIdx >= stops.length - 2) {{
-                    showToast("Route already optimal!");
-                    return;
-                }}
-
-                let hasDepot = stops[stops.length - 1].is_depot;
-                let depotStop = hasDepot ? stops.pop() : null;
-
-                // Take all stops after current
-                let remaining = stops.splice(curIdx + 1);
-
-                let currentLat = parseFloat(stops[curIdx].lat || 0.0);
-                let currentLon = parseFloat(stops[curIdx].lon || 0.0);
-
-                let optimized = [];
-                while (remaining.length > 0) {{
-                    let bestIdx = 0;
-                    let bestDist = Infinity;
-
-                    for (let i = 0; i < remaining.length; i++) {{
-                        let candLat = parseFloat(remaining[i].lat || 0.0);
-                        let candLon = parseFloat(remaining[i].lon || 0.0);
-
-                        let d = 0;
-                        if (currentLat !== 0 && candLat !== 0) {{
-                            d = haversineMiles(currentLat, currentLon, candLat, candLon);
-                        }} else {{
-                            d = remaining[i].full_dest.localeCompare(stops[curIdx].full_dest);
-                        }}
-
-                        if (d < bestDist) {{
-                            bestDist = d;
-                            bestIdx = i;
-                        }}
+            // Live dwell ticker on the active card
+            setInterval(() => {{
+                if (stops.length > 0 && curIdx < stops.length) {{
+                    const s = stops[curIdx];
+                    if (s.arrived_at && !s.is_depot && s.status === "pending") {{
+                        let totalSec = Math.floor((Date.now() - s.arrived_at) / 1000);
+                        let m = Math.floor(totalSec / 60);
+                        let sec = totalSec % 60;
+                        document.getElementById("disp-timer").innerText = m + ":" + (sec < 10 ? "0" : "") + sec;
                     }}
-
-                    let chosen = remaining.splice(bestIdx, 1)[0];
-                    chosen.leg_miles = bestDist === Infinity ? 4.0 : Math.round(bestDist * 10) / 10;
-                    optimized.push(chosen);
-                    currentLat = parseFloat(chosen.lat || currentLat);
-                    currentLon = parseFloat(chosen.lon || currentLon);
                 }}
-
-                // Calculate return distance to depot
-                if (depotStop) {{
-                    if (currentLat !== 0 && depotStop.lat) {{
-                        depotStop.leg_miles = Math.round(haversineMiles(currentLat, currentLon, depotStop.lat, depotStop.lon) * 10) / 10;
-                    }}
-                    optimized.push(depotStop);
-                }}
-
-                stops = stops.concat(optimized);
-                updateDeck();
-                showToast("🔀 All Remaining Stops Geographically Re-Ordered!");
-            }}
+            }}, 1000);
 
             updateDeck();
-            setInterval(updateDeck, 15000);
+            setInterval(updateDeck, 20000);
         </script>
     </body>
     </html>
     """
 
-    components.html(deck_html, height=640, scrolling=False)
+    components.html(deck_html, height=660, scrolling=False)
