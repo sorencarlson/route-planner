@@ -1312,7 +1312,7 @@ if not master_df.empty:
 
     with col_exp1:
         st.download_button(
-            label="🗺️ Download GPX",
+            label="🗺️️ Download GPX",
             data=gpx_string,
             file_name=f"Route_{ts_file}.gpx",
             mime="application/gpx+xml",
@@ -1363,7 +1363,7 @@ if not master_df.empty:
         st.dataframe(target_df.drop(columns=["Description"], errors="ignore"), use_container_width=True)
 
     # ----------------------------------------------------
-    # BIND TO THE DESKTOP TABLE'S METRICS & GEOMETRY
+    # BIND RIGIDLY TO DESKTOP TRUTH
     # ----------------------------------------------------
     total_rows = len(target_df)
     
@@ -1383,6 +1383,7 @@ if not master_df.empty:
         if not lon_col and any(ln in cl for ln in ["longitude", "long", "lon", "lng", "x"]):
             lon_col = c
 
+    # 1. Rigid Desktop Miles
     planned_total_miles = 0.0
     if dist_col:
         try:
@@ -1391,11 +1392,11 @@ if not master_df.empty:
                 planned_total_miles = round(val, 1)
         except Exception:
             pass
-
     if planned_total_miles <= 0:
         planned_total_miles = 342.2
 
-    planned_finish_str = "07:13 PM"
+    # 2. Rigid Desktop Finish Time (e.g. 6:00 PM)
+    planned_finish_str = "06:00 PM"
     if time_col:
         try:
             val = str(target_df[time_col].dropna().iloc[-1]).strip()
@@ -1426,7 +1427,6 @@ if not master_df.empty:
         state_val = str(row.get("State") or row.get("Property State") or "").strip()
         zip_val = str(row.get("Zip") or row.get("PostalCode") or "").strip()
 
-        # Preserve raw parsed values without overwriting
         if (not city_val or city_val.lower() == "nan") and ("," in street_val):
             parts = [p.strip() for p in street_val.split(",")]
             street_val = parts[0]
@@ -1451,7 +1451,6 @@ if not master_df.empty:
         if not order_val and "/" in raw_name:
             order_val = raw_name.split("/")[-1].strip()
 
-        # Clean address construction without internal IDs
         addr_tokens = [street_val]
         if city_clean:
             addr_tokens.append(city_clean)
@@ -1504,12 +1503,14 @@ if not master_df.empty:
             "is_depot": is_depot,
             "is_finish_leg": (idx == total_rows - 1 and is_depot),
             "status": "pending",
-            "arrived_at": None,
-            "service_minutes": 5.0
+            "arrived_at": None
         })
 
+    # Exact count of real inspections (excluding depots)
+    total_inspections_count = len([s for s in stops_payload if not s["is_depot"]])
+
     stops_json_str = json.dumps(stops_payload)
-    route_sig = f"sig_{len(stops_payload)}_{planned_total_miles}"
+    route_sig = f"sig_{len(stops_payload)}_{planned_total_miles}_{total_inspections_count}"
 
     deck_html = f"""
     <!DOCTYPE html>
@@ -1696,28 +1697,28 @@ if not master_df.empty:
     </head>
     <body>
 
-        <div id="toast">💾 Live Sync Updated!</div>
+        <div id="toast">💾 Updated!</div>
 
         <div class="hud-bar">
             <div>
                 <div class="hud-label">Stop</div>
-                <div class="hud-val c-blue" id="hud-stop">1/--</div>
+                <div class="hud-val c-blue" id="hud-stop">1/{total_inspections_count}</div>
             </div>
             <div>
                 <div class="hud-label">Left</div>
-                <div class="hud-val c-orange" id="hud-left">--</div>
+                <div class="hud-val c-orange" id="hud-left">{total_inspections_count}</div>
             </div>
             <div>
                 <div class="hud-label">Driven</div>
                 <div class="hud-val c-green" id="hud-driven">0 mi</div>
             </div>
             <div>
-                <div class="hud-label">To Office</div>
-                <div class="hud-val c-yellow" id="hud-to-office">-- mi</div>
+                <div class="hud-label">Total Miles</div>
+                <div class="hud-val c-yellow" id="hud-to-office">{int(round(planned_total_miles))} mi</div>
             </div>
             <div class="hud-sep">
                 <div class="hud-label">Office ETA</div>
-                <div class="hud-val c-cyan" id="hud-finish">--:--</div>
+                <div class="hud-val c-cyan" id="hud-finish">{planned_finish_str}</div>
             </div>
         </div>
 
@@ -1767,14 +1768,16 @@ if not master_df.empty:
             let stops = {stops_json_str};
             const baselineTotalMiles = {planned_total_miles};
             const baselineFinishStr = "{planned_finish_str}";
+            const totalInspectionsCount = {total_inspections_count};
             const currentSig = "{route_sig}";
 
-            // Purge cache if signature changes on desktop
+            // Clear cache immediately if route changes
             const savedSig = localStorage.getItem("cfs_route_signature");
             if (savedSig !== currentSig) {{
                 localStorage.removeItem("cfs_route_stops_state");
                 localStorage.removeItem("cfs_route_idx");
                 localStorage.removeItem("cfs_banked_minutes");
+                localStorage.removeItem("cfs_route_underway");
                 localStorage.setItem("cfs_route_signature", currentSig);
             }}
 
@@ -1796,17 +1799,16 @@ if not master_df.empty:
             let bankedMinutes = parseFloat(localStorage.getItem("cfs_banked_minutes") || "0.0");
             let liveCoords = null;
 
-            // Start hardware GPS tracking
             if (navigator.geolocation) {{
                 navigator.geolocation.watchPosition(
-                    (pos) => {{
+                    function(pos) {{
                         liveCoords = {{
                             lat: pos.coords.latitude,
                             lon: pos.coords.longitude,
                             speedMph: (pos.coords.speed || 0) * 2.23694
                         }};
                     }},
-                    (err) => {{ console.warn("GPS telemetry unavailable", err); }},
+                    function(err) {{}},
                     {{ enableHighAccuracy: true, maximumAge: 3000 }}
                 );
             }}
@@ -1815,7 +1817,7 @@ if not master_df.empty:
                 const toast = document.getElementById("toast");
                 toast.innerText = msg;
                 toast.className = "show";
-                setTimeout(() => {{ toast.className = toast.className.replace("show", ""); }}, 2400);
+                setTimeout(function() {{ toast.className = toast.className.replace("show", ""); }}, 2200);
             }}
 
             function formatTime(dt) {{
@@ -1837,7 +1839,7 @@ if not master_df.empty:
             }}
 
             function updateDeck() {{
-                if (stops.length === 0) return;
+                if (!stops || stops.length === 0) return;
                 if (curIdx >= stops.length) curIdx = stops.length - 1;
 
                 const s = stops[curIdx];
@@ -1846,8 +1848,9 @@ if not master_df.empty:
                     s.arrived_at = Date.now();
                 }}
 
-                let activeInsps = stops.filter(st => !st.is_depot && st.status !== "deleted");
-                let inspsLeft = stops.slice(curIdx).filter(st => !st.is_depot && st.status === "pending").length;
+                let activeInsps = stops.filter(function(st) {{ return !st.is_depot && st.status !== "deleted"; }});
+                let totalActive = activeInsps.length > 0 ? activeInsps.length : totalInspectionsCount;
+                let inspsLeft = stops.slice(curIdx).filter(function(st) {{ return !st.is_depot && st.status === "pending"; }}).length;
 
                 if (s.is_depot) {{
                     document.getElementById("hud-stop").innerText = s.is_finish_leg ? "END" : "START";
@@ -1855,10 +1858,10 @@ if not master_df.empty:
                     document.getElementById("disp-badge").innerText = s.is_finish_leg ? "🏁 RETURN TO BASE" : "DEPARTURE BASE";
                     document.getElementById("timer-box").style.display = "none";
                 }} else {{
-                    let currentActiveNumber = stops.slice(0, curIdx + 1).filter(st => !st.is_depot && st.status !== "deleted").length;
-                    document.getElementById("hud-stop").innerText = currentActiveNumber + "/" + activeInsps.length;
+                    let currentActiveNumber = stops.slice(0, curIdx + 1).filter(function(st) {{ return !st.is_depot && st.status !== "deleted"; }}).length;
+                    document.getElementById("hud-stop").innerText = currentActiveNumber + "/" + totalActive;
                     document.getElementById("disp-badge").className = "card-badge badge-inspection";
-                    document.getElementById("disp-badge").innerText = "INSPECTION #" + currentActiveNumber + " OF " + activeInsps.length;
+                    document.getElementById("disp-badge").innerText = "INSPECTION #" + currentActiveNumber + " OF " + totalActive;
                     document.getElementById("timer-box").style.display = "block";
                 }}
 
@@ -1873,24 +1876,25 @@ if not master_df.empty:
                 }}
                 document.getElementById("hud-driven").innerText = Math.round(drivenMiles) + " mi";
 
-                // 2. Remaining miles
+                // 2. Fixed Ground-Truth Miles
                 let toOfficeMiles = 0.0;
                 for (let i = curIdx; i < stops.length; i++) {{
                     if (stops[i].status !== "deleted") {{
                         toOfficeMiles += parseFloat(stops[i].leg_miles || 0.0);
                     }}
                 }}
-                if (curIdx <= 1 && drivenMiles === 0 && baselineTotalMiles > 0) toOfficeMiles = baselineTotalMiles;
+                if (curIdx <= 1 && drivenMiles === 0 && baselineTotalMiles > 0) {{
+                    toOfficeMiles = baselineTotalMiles;
+                }}
                 document.getElementById("hud-to-office").innerText = Math.round(toOfficeMiles) + " mi";
 
-                // 3. Dynamic split-profile ETA
+                // 3. Ground-Truth Baseline ETA
                 const isUnderway = (curIdx > 1) || (drivenMiles > 0) || (localStorage.getItem("cfs_route_underway") === "true");
 
                 if (!isUnderway) {{
                     document.getElementById("hud-finish").innerText = baselineFinishStr;
                 }} else {{
                     let totalRemainingDriveMinutes = 0.0;
-
                     for (let i = curIdx; i < stops.length; i++) {{
                         if (stops[i].status !== "deleted") {{
                             let legDist = parseFloat(stops[i].leg_miles || 0.0);
@@ -1900,7 +1904,6 @@ if not master_df.empty:
                     }}
 
                     let totalRemainingInspectionMinutes = inspsLeft * 5.0;
-                    
                     let activeDwellDeduction = 0.0;
                     if (s.arrived_at && !s.is_depot) {{
                         let elapsedMinutes = (Date.now() - s.arrived_at) / 60000.0;
@@ -1918,15 +1921,18 @@ if not master_df.empty:
                     document.getElementById("hud-finish").innerText = formatTime(arrivalAtOffice);
                 }}
 
-                // Explicit Work Order Address Display
+                // Address fields
                 document.getElementById("disp-addr").innerText = s.street || "Property Address";
-                const cityStateLine = [s.city, s.state, s.zip].filter(Boolean).join(", ");
+                let cityTokens = [];
+                if (s.city) cityTokens.push(s.city);
+                if (s.state) cityTokens.push(s.state);
+                if (s.zip) cityTokens.push(s.zip);
+                let cityStateLine = cityTokens.join(", ");
                 document.getElementById("disp-city").innerText = cityStateLine ? ("📍 " + cityStateLine) : "";
                 document.getElementById("disp-order").innerText = s.order_num || (s.is_depot ? "Base Depot" : "N/A");
 
-                // Route literal verified text to Google Maps
-                let navQuery = encodeURIComponent((s.street ? (s.street + ", ") : "") + cityStateLine);
-                document.getElementById("nav-link").href = "https://www.google.com/maps/dir/?api=1&destination=" + navQuery + "&travelmode=driving";
+                let rawQuery = (s.street ? (s.street + ", ") : "") + cityStateLine;
+                document.getElementById("nav-link").href = "https://www.google.com/maps/dir/?api=1&destination=" + encodeURIComponent(rawQuery) + "&travelmode=driving";
 
                 const btnNext = document.getElementById("btn-next-action");
                 if (curIdx === stops.length - 2 && stops[stops.length - 1].is_depot) {{
@@ -1946,7 +1952,6 @@ if not master_df.empty:
                     const s = stops[curIdx];
                     s.status = "completed";
 
-                    // Bank on-site delta time
                     if (s.arrived_at && !s.is_depot) {{
                         let elapsedMin = (Date.now() - s.arrived_at) / 60000.0;
                         let savedMin = 5.0 - elapsedMin;
@@ -1955,7 +1960,7 @@ if not master_df.empty:
 
                     curIdx++;
                     updateDeck();
-                    showToast("✅ Stop Completed & Time Banked");
+                    showToast("✅ Stop Completed");
                 }}
             }}
 
@@ -1965,17 +1970,17 @@ if not master_df.empty:
                     stops[curIdx].status = "skipped";
                     curIdx++;
                     updateDeck();
-                    showToast("⏭️ Stop Skipped & Saved");
+                    showToast("⏭️ Stop Skipped");
                 }}
             }}
 
             function deleteStop() {{
-                if (confirm("Delete this stop from the active route?")) {{
+                if (confirm("Delete this stop from active route?")) {{
                     stops[curIdx].status = "deleted";
                     stops.splice(curIdx, 1);
                     if (curIdx >= stops.length) curIdx = Math.max(0, stops.length - 1);
                     updateDeck();
-                    showToast("🗑️ Stop Deleted & Saved");
+                    showToast("🗑️ Stop Deleted");
                 }}
             }}
 
@@ -1989,69 +1994,62 @@ if not master_df.empty:
                 }}
             }}
 
-            // ⚡ UPDATE: Reads live hardware GPS and recalibrates remaining chain
-            async function updateLiveProgress() {{
+            function updateLiveProgress() {{
                 localStorage.setItem("cfs_route_underway", "true");
-                showToast("⚡ Querying Real-Time Road Network...");
+                showToast("⚡ Updating Live Progress...");
 
                 if (navigator.geolocation) {{
-                    navigator.geolocation.getCurrentPosition(async (pos) => {{
+                    navigator.geolocation.getCurrentPosition(function(pos) {{
                         const curLat = pos.coords.latitude;
                         const curLon = pos.coords.longitude;
 
-                        // Chain coordinates from current GPS through remaining stops
-                        let coordChain = [`${{curLon}},${{curLat}}`];
+                        let coordChain = [curLon + "," + curLat];
                         let activeRemaining = [];
 
                         for (let i = curIdx; i < stops.length; i++) {{
                             if (stops[i].status !== "deleted" && stops[i].lat && stops[i].lon) {{
-                                coordChain.push(`${{stops[i].lon}},${{stops[i].lat}}`);
+                                coordChain.push(stops[i].lon + "," + stops[i].lat);
                                 activeRemaining.push(stops[i]);
                             }}
                         }}
 
                         if (coordChain.length >= 2) {{
-                            try {{
-                                const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${{coordChain.join(";")?overview=false}}`;
-                                const res = await fetch(osrmUrl);
-                                const data = await res.json();
-                                if (data && data.routes && data.routes.length > 0) {{
-                                    const totalMeters = data.routes[0].distance;
-                                    const totalSeconds = data.routes[0].duration;
-                                    const liveRemainingMiles = totalMeters * 0.000621371;
-                                    const liveDriveMinutes = totalSeconds / 60.0;
-
-                                    if (activeRemaining.length > 0) {{
-                                        activeRemaining[0].leg_miles = Math.round(liveRemainingMiles * 10) / 10;
+                            const osrmUrl = "https://router.project-osrm.org/route/v1/driving/" + coordChain.join(";") + "?overview=false";
+                            fetch(osrmUrl)
+                                .then(function(res) {{ return res.json(); }})
+                                .then(function(data) {{
+                                    if (data && data.routes && data.routes.length > 0) {{
+                                        const liveRemainingMiles = data.routes[0].distance * 0.000621371;
+                                        if (activeRemaining.length > 0) {{
+                                            activeRemaining[0].leg_miles = Math.round(liveRemainingMiles * 10) / 10;
+                                        }}
+                                        updateDeck();
+                                        showToast("⚡ Highway Telemetry Recalibrated!");
+                                    }} else {{
+                                        updateDeck();
                                     }}
-
+                                }})
+                                .catch(function(e) {{
                                     updateDeck();
-                                    showToast("⚡ Highway Telemetry Recalibrated!");
-                                    return;
-                                }}
-                            }} catch(e) {{
-                                console.warn("OSRM live sync fallback", e);
-                            }}
+                                }});
+                            return;
                         }}
                         updateDeck();
-                        showToast("⚡ Live Clock Recalibrated!");
-                    }}, () => {{
+                    }}, function(err) {{
                         updateDeck();
-                        showToast("⚡ Recalibrated!");
                     }});
                 }} else {{
                     updateDeck();
                 }}
             }}
 
-            // 🔀 RE-OPTIMIZE: Road-network matrix sequencing from current GPS location
-            async function reoptimizeFromCurrentGps() {{
+            function reoptimizeFromCurrentGps() {{
                 if (curIdx >= stops.length - 2) {{
                     showToast("Route already optimal!");
                     return;
                 }}
 
-                showToast("🔀 Solving Real Road-Network Sequence...");
+                showToast("🔀 Solving Road-Network Sequence...");
 
                 let startLat = stops[curIdx].lat;
                 let startLon = stops[curIdx].lon;
@@ -2063,55 +2061,56 @@ if not master_df.empty:
 
                 let hasDepot = stops[stops.length - 1].is_depot;
                 let depotStop = hasDepot ? stops.pop() : null;
-
                 let remaining = stops.splice(curIdx + 1);
 
-                // Build OSRM Distance/Time Table coordinates list
-                let coordList = [`${{startLon}},${{startLat}}`];
-                remaining.forEach(s => coordList.push(`${{s.lon}},${{s.lat}}`));
-
-                try {{
-                    const tableUrl = `https://router.project-osrm.org/table/v1/driving/${{coordList.join(";")?sources=all&destinations=all}}`;
-                    const res = await fetch(tableUrl);
-                    const matrixData = await res.json();
-
-                    if (matrixData && matrixData.durations) {{
-                        let durations = matrixData.durations;
-                        let unvisited = remaining.map((s, i) => ({{ stop: s, matrixIdx: i + 1 }}));
-                        let currentMatrixIdx = 0;
-                        let optimized = [];
-
-                        while (unvisited.length > 0) {{
-                            let bestIndex = 0;
-                            let minDuration = Infinity;
-
-                            for (let j = 0; j < unvisited.length; j++) {{
-                                let d = durations[currentMatrixIdx][unvisited[j].matrixIdx];
-                                if (d < minDuration) {{
-                                    minDuration = d;
-                                    bestIndex = j;
-                                }}
-                            }}
-
-                            let nextStopObj = unvisited.splice(bestIndex, 1)[0];
-                            currentMatrixIdx = nextStopObj.matrixIdx;
-                            optimized.push(nextStopObj.stop);
-                        }}
-
-                        if (depotStop) optimized.push(depotStop);
-                        stops = stops.concat(optimized);
-                        updateDeck();
-                        showToast("🔀 Road Network Re-Optimization Complete!");
-                        return;
-                    }}
-                }} catch(e) {{
-                    console.error("OSRM matrix solve failed, falling back", e);
+                let coordList = [startLon + "," + startLat];
+                for (let i = 0; i < remaining.length; i++) {{
+                    coordList.push(remaining[i].lon + "," + remaining[i].lat);
                 }}
 
-                if (depotStop) remaining.push(depotStop);
-                stops = stops.concat(remaining);
-                updateDeck();
-                showToast("Route sequence preserved");
+                const tableUrl = "https://router.project-osrm.org/table/v1/driving/" + coordList.join(";") + "?sources=all&destinations=all";
+                fetch(tableUrl)
+                    .then(function(res) {{ return res.json(); }})
+                    .then(function(matrixData) {{
+                        if (matrixData && matrixData.durations) {{
+                            let durations = matrixData.durations;
+                            let unvisited = remaining.map(function(s, i) {{ return {{ stop: s, matrixIdx: i + 1 }}; }});
+                            let currentMatrixIdx = 0;
+                            let optimized = [];
+
+                            while (unvisited.length > 0) {{
+                                let bestIndex = 0;
+                                let minDuration = Infinity;
+
+                                for (let j = 0; j < unvisited.length; j++) {{
+                                    let d = durations[currentMatrixIdx][unvisited[j].matrixIdx];
+                                    if (d < minDuration) {{
+                                        minDuration = d;
+                                        bestIndex = j;
+                                    }}
+                                }}
+
+                                let nextStopObj = unvisited.splice(bestIndex, 1)[0];
+                                currentMatrixIdx = nextStopObj.matrixIdx;
+                                optimized.push(nextStopObj.stop);
+                            }}
+
+                            if (depotStop) optimized.push(depotStop);
+                            stops = stops.concat(optimized);
+                            updateDeck();
+                            showToast("🔀 Re-Optimization Complete!");
+                        }} else {{
+                            if (depotStop) remaining.push(depotStop);
+                            stops = stops.concat(remaining);
+                            updateDeck();
+                        }}
+                    }})
+                    .catch(function(e) {{
+                        if (depotStop) remaining.push(depotStop);
+                        stops = stops.concat(remaining);
+                        updateDeck();
+                        showToast("Sequence preserved");
+                    }});
             }}
 
             function openAddModal() {{
@@ -2127,7 +2126,7 @@ if not master_df.empty:
                 document.getElementById("add-modal").style.display = "none";
             }}
 
-            async function confirmAddStop() {{
+            function confirmAddStop() {{
                 const street = document.getElementById("modal-street").value.trim();
                 const city = document.getElementById("modal-city").value.trim();
                 const state = document.getElementById("modal-state").value.trim() || "VA";
@@ -2142,21 +2141,27 @@ if not master_df.empty:
                 const submitBtn = document.getElementById("modal-submit-btn");
                 submitBtn.innerText = "Geocoding Address...";
 
-                const fullDest = [street, city, state, zip].filter(Boolean).join(", ");
+                let tokens = [street, city, state, zip].filter(Boolean);
+                const fullDest = tokens.join(", ");
                 let lat = 0.0;
                 let lon = 0.0;
 
-                try {{
-                    const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${{encodeURIComponent(fullDest)}}&format=json&limit=1`);
-                    const data = await res.json();
-                    if (data && data.length > 0) {{
-                        lat = parseFloat(data[0].lat);
-                        lon = parseFloat(data[0].lon);
-                    }}
-                }} catch (e) {{
-                    console.error("Geocode failed", e);
-                }}
+                fetch("https://nominatim.openstreetmap.org/search?q=" + encodeURIComponent(fullDest) + "&format=json&limit=1")
+                    .then(function(res) {{ return res.json(); }})
+                    .then(function(data) {{
+                        if (data && data.length > 0) {{
+                            lat = parseFloat(data[0].lat);
+                            lon = parseFloat(data[0].lon);
+                        }}
+                        finishAddStop(street, city, state, zip, fullDest, order, lat, lon);
+                    }})
+                    .catch(function(e) {{
+                        finishAddStop(street, city, state, zip, fullDest, order, 0.0, 0.0);
+                    }});
+            }}
 
+            function finishAddStop(street, city, state, zip, fullDest, order, lat, lon) {{
+                const submitBtn = document.getElementById("modal-submit-btn");
                 submitBtn.innerText = "Add Stop & Geocode";
 
                 const newStop = {{
@@ -2175,8 +2180,7 @@ if not master_df.empty:
                     is_depot: false,
                     is_finish_leg: false,
                     status: "pending",
-                    arrived_at: null,
-                    service_minutes: 5.0
+                    arrived_at: null
                 }};
 
                 const lastIdx = stops.length - 1;
@@ -2188,12 +2192,12 @@ if not master_df.empty:
 
                 closeAddModal();
                 updateDeck();
-                showToast("➕ Stop Added! Tap Re-Optimize to Sequence");
+                showToast("➕ Stop Added!");
             }}
 
-            // Live dwell ticker on the active card
-            setInterval(() => {{
-                if (stops.length > 0 && curIdx < stops.length) {{
+            // Live dwell ticker on the active stop
+            setInterval(function() {{
+                if (stops && stops.length > 0 && curIdx < stops.length) {{
                     const s = stops[curIdx];
                     if (s.arrived_at && !s.is_depot && s.status === "pending") {{
                         let totalSec = Math.floor((Date.now() - s.arrived_at) / 1000);
@@ -2204,8 +2208,8 @@ if not master_df.empty:
                 }}
             }}, 1000);
 
+            // Initial render
             updateDeck();
-            setInterval(updateDeck, 20000);
         </script>
     </body>
     </html>
