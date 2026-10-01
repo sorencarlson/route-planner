@@ -1231,7 +1231,7 @@ if not master_df.empty:
 
         .control-deck {{
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: 1fr 1fr 1fr;
             gap: 8px;
             margin-bottom: 8px;
         }}
@@ -1241,7 +1241,7 @@ if not master_df.empty:
             border: 1px solid #3a506b;
             padding: 14px 4px;
             border-radius: 10px;
-            font-size: 0.90rem;
+            font-size: 0.82rem;
             font-weight: 700;
             cursor: pointer;
             text-align: center;
@@ -1326,8 +1326,9 @@ if not master_df.empty:
     </div>
 
     <div class="control-deck">
-        <button class="btn-tool" onclick="openReoptMenu()">⚡ Re-Sync Options</button>
-        <button class="btn-tool" onclick="openTimetableModal()">📋 Upcoming Stops</button>
+        <button class="btn-tool" onclick="openReoptMenu()">⚡ Re-Sync</button>
+        <button class="btn-tool" onclick="openAddModal()">➕ Add Stop</button>
+        <button class="btn-tool" onclick="openTimetableModal()">📋 Upcoming</button>
     </div>
 
     <!-- Circuit Action Split Modal -->
@@ -1347,6 +1348,23 @@ if not master_df.empty:
             </button>
 
             <button class="btn-secondary btn-danger" style="width:100%; padding:10px; margin-top:8px;" onclick="closeReoptMenu()">Cancel</button>
+        </div>
+    </div>
+
+    <!-- Add Stop Modal -->
+    <div id="add-modal" class="modal-overlay">
+        <div class="modal-sheet">
+            <h3 style="margin-top:0; color:#fff;">Add Inspection Stop</h3>
+            <input type="text" id="modal-street" style="width:100%; padding:12px; margin-bottom:8px; border-radius:8px; background:#0b132b; color:#fff; border:1px solid #475569;" placeholder="Street Address (e.g. 12253 Piney Ln)">
+            <div style="display:grid; grid-template-columns: 2fr 1fr 1fr; gap:6px; margin-bottom:8px;">
+                <input type="text" id="modal-city" style="padding:10px; border-radius:8px; background:#0b132b; color:#fff; border:1px solid #475569;" placeholder="City">
+                <input type="text" id="modal-state" style="padding:10px; border-radius:8px; background:#0b132b; color:#fff; border:1px solid #475569;" value="VA">
+                <input type="text" id="modal-zip" style="padding:10px; border-radius:8px; background:#0b132b; color:#fff; border:1px solid #475569;" placeholder="Zip">
+            </div>
+            <input type="text" id="modal-order" style="width:100%; padding:12px; margin-bottom:12px; border-radius:8px; background:#0b132b; color:#fff; border:1px solid #475569;" placeholder="Work Order #">
+            
+            <button id="modal-submit-btn" class="btn-next" style="padding:14px; font-size:1.05rem;" onclick="confirmAddStop()">Add Stop & Geocode</button>
+            <button class="btn-secondary btn-danger" style="width:100%; padding:10px; margin-top:8px;" onclick="closeAddModal()">Cancel</button>
         </div>
     </div>
 
@@ -1560,6 +1578,85 @@ if not master_df.empty:
         }}
         function closeReoptMenu() {{
             document.getElementById("reopt-modal").style.display = "none";
+        }}
+
+        function openAddModal() {{
+            document.getElementById("modal-street").value = "";
+            document.getElementById("modal-city").value = "";
+            document.getElementById("modal-state").value = "VA";
+            document.getElementById("modal-zip").value = "";
+            document.getElementById("modal-order").value = "";
+            document.getElementById("add-modal").style.display = "block";
+        }}
+
+        function closeAddModal() {{
+            document.getElementById("add-modal").style.display = "none";
+        }}
+
+        function confirmAddStop() {{
+            const street = document.getElementById("modal-street").value.trim();
+            const city = document.getElementById("modal-city").value.trim();
+            const state = document.getElementById("modal-state").value.trim() || "VA";
+            const zip = document.getElementById("modal-zip").value.trim();
+            const order = document.getElementById("modal-order").value.trim();
+
+            if (!street) {{
+                alert("Please enter a street address");
+                return;
+            }}
+
+            const submitBtn = document.getElementById("modal-submit-btn");
+            submitBtn.innerText = "Geocoding Address...";
+
+            let tokens = [street, city, state, zip].filter(Boolean);
+            const fullDest = tokens.join(", ");
+
+            fetch("https://nominatim.openstreetmap.org/search?q=" + encodeURIComponent(fullDest) + "&format=json&limit=1")
+                .then(r => r.json())
+                .then(data => {{
+                    let lat = (data && data.length > 0) ? parseFloat(data[0].lat) : 0.0;
+                    let lon = (data && data.length > 0) ? parseFloat(data[0].lon) : 0.0;
+                    finishAddStop(street, city, state, zip, fullDest, order, lat, lon);
+                }})
+                .catch(e => {{
+                    finishAddStop(street, city, state, zip, fullDest, order, 0.0, 0.0);
+                }});
+        }}
+
+        function finishAddStop(street, city, state, zip, fullDest, order, lat, lon) {{
+            document.getElementById("modal-submit-btn").innerText = "Add Stop & Geocode";
+
+            const newStop = {{
+                row_idx: stops.length,
+                stop_num: stops.length,
+                insp_id: order || "ADDED-STOP",
+                street: street,
+                city: city,
+                state: state,
+                zip: zip,
+                full_dest: fullDest,
+                order_num: order || "ADDED-STOP",
+                planned_arrival: "--:--",
+                cum_miles: 0,
+                leg_miles: 4.0,
+                lat: lat,
+                lon: lon,
+                is_depot: false,
+                is_finish_leg: false,
+                status: "pending",
+                arrived_at: null
+            }};
+
+            const lastIdx = stops.length - 1;
+            if (stops[lastIdx] && stops[lastIdx].is_depot) {{
+                stops.splice(lastIdx, 0, newStop);
+            }} else {{
+                stops.push(newStop);
+            }}
+
+            closeAddModal();
+            updateDeck();
+            showToast("➕ Stop Added Before Base!");
         }}
 
         function openTimetableModal() {{
