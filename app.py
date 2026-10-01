@@ -442,6 +442,64 @@ def calculate_schedule(
     return schedules
 
 
+def export_waypoints_gpx(sched_df):
+    gpx_xml = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<gpx version="1.1" creator="RoutePlanner" xmlns="http://www.topografix.com/GPX/1/1">',
+        "  <rte>",
+        f'    <name>{datetime.now().strftime("%Y-%m-%d")}</name>',
+    ]
+    seen_ids = set()
+    for _, row in sched_df.iterrows():
+        try:
+            insp_id = str(row["Inspection ID"]).strip()
+            if (
+                not insp_id
+                or insp_id.lower() in ["depot", "nan"]
+                or insp_id in seen_ids
+            ):
+                continue
+            seen_ids.add(insp_id)
+            lat = float(row["Latitude"])
+            lon = float(row["Longitude"])
+            desc = (
+                str(row["Description"])
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+            )
+            gpx_xml.append(f'    <rtept lat="{lat}" lon="{lon}">')
+            gpx_xml.append(f"      <name>{insp_id}</name>")
+            gpx_xml.append(f"      <desc>{desc}</desc>")
+            gpx_xml.append("    </rtept>")
+        except Exception:
+            continue
+    gpx_xml.append("  </rte>")
+    gpx_xml.append("</gpx>")
+    return "\n".join(gpx_xml)
+
+
+def export_directions_txt(sched_df):
+    lines = [
+        "==========================================",
+        f"ROUTE DIRECTIONS - {datetime.now().strftime('%Y-%m-%d')}",
+        "==========================================\n",
+    ]
+    for _, row in sched_df.iterrows():
+        insp_str = (
+            f" [ID: {row['Inspection ID']}]" if row["Inspection ID"] else ""
+        )
+        lines.append(
+            f"Stop {row['Stop Number']}{insp_str}: {row['Description']}"
+        )
+        lines.append(
+            f"  Arrival: {row['Arrival']}  |  Departure: {row['Departure']}"
+        )
+        lines.append(f"  Total Distance: {row['Total Miles']} miles")
+        lines.append("-" * 40)
+    return "\n".join(lines)
+
+
 # =========================================================================
 # 2. STREAMLIT APP & UI
 # =========================================================================
@@ -668,7 +726,7 @@ if not master_df.empty:
             f"⚠️ **Attention: {len(failed_stops)} Address(es) could not be mapped automatically!**"
         )
         with st.expander(
-            "🛠️️ Click Here to Review & Fix Unresolved Addresses", expanded=True
+            "🛠️ Click Here to Review & Fix Unresolved Addresses", expanded=True
         ):
             for item in failed_stops:
                 f_idx = item["Index"]
@@ -895,6 +953,64 @@ if not master_df.empty:
             )
             col_m3.metric("📍 Active Stops", f"{max(0, len(sched_df) - 2)}")
             col_m4.metric("🏁 Target Office Return", final_row["Arrival"])
+
+            # ----------------- SAVE ROUTE & EXPORTS -----------------
+            st.markdown("---")
+            st.subheader("💾 Save Route & Export Data")
+            exp_col1, exp_col2, exp_col3, exp_col4 = st.columns(4)
+
+            with exp_col1:
+                default_name = f"Route_{datetime.now().strftime('%Y%m%d_%H%M')}"
+                route_save_name = st.text_input(
+                    "Save As Route Name:",
+                    value=default_name,
+                    key="desk_save_rt_name",
+                )
+                if st.button(
+                    "💾 Save Route", type="primary", use_container_width=True
+                ):
+                    os.makedirs(SAVED_DIR, exist_ok=True)
+                    save_path = os.path.join(
+                        SAVED_DIR, f"{route_save_name}.csv"
+                    )
+                    sched_df.to_csv(save_path, index=False)
+                    st.toast(
+                        f"Saved {route_save_name} successfully!", icon="💾"
+                    )
+                    st.rerun()
+
+            with exp_col2:
+                csv_bytes = sched_df.to_csv(index=False).encode("utf-8")
+                st.download_button(
+                    label="📥 Download CSV",
+                    data=csv_bytes,
+                    file_name=f"{route_save_name}.csv",
+                    mime="text/csv",
+                    key="desk_dl_csv",
+                    use_container_width=True,
+                )
+
+            with exp_col3:
+                gpx_data = export_waypoints_gpx(sched_df)
+                st.download_button(
+                    label="🗺️ Download GPX",
+                    data=gpx_data,
+                    file_name=f"{route_save_name}.gpx",
+                    mime="application/gpx+xml",
+                    key="desk_dl_gpx",
+                    use_container_width=True,
+                )
+
+            with exp_col4:
+                txt_data = export_directions_txt(sched_df)
+                st.download_button(
+                    label="📄 Download Directions (TXT)",
+                    data=txt_data,
+                    file_name=f"{route_save_name}_directions.txt",
+                    mime="text/plain",
+                    key="desk_dl_txt",
+                    use_container_width=True,
+                )
 
         # =========================================================================
         # VIEW 2: MOBILE DRIVER DECK (LOCKED ENGINE & CIRCUIT WORKFLOW)
@@ -1318,7 +1434,6 @@ if not master_df.empty:
                 d.setMinutes(mins);
                 d.setSeconds(0);
 
-                // Subtract banked minutes: faster work pulls arrival earlier
                 let adjusted = new Date(d.getTime() - (deltaMinutes * 60000));
                 
                 let outHrs = adjusted.getHours();
@@ -1369,7 +1484,6 @@ if not master_df.empty:
             document.getElementById("hud-driven").innerText = Math.round(drivenMiles) + " mi";
             document.getElementById("hud-to-office").innerText = Math.round(MASTER_TOTAL_MILES) + " mi";
 
-            // Office ETA shifts dynamically based on banked delta
             let dynamicFinish = applyDeltaToTimeString(baselineFinishStr, bankedMinutes);
             document.getElementById("hud-finish").innerText = dynamicFinish;
 
@@ -1381,7 +1495,6 @@ if not master_df.empty:
             let plannedArrivalAdjusted = applyDeltaToTimeString(s.planned_arrival, bankedMinutes);
             document.getElementById("disp-planned-arrival").innerText = plannedArrivalAdjusted;
 
-            // Verified destination string to Google Maps
             let verifiedNavTokens = [s.street, s.city || "Front Royal", s.state || "VA", s.zip].filter(Boolean);
             let verifiedAddress = verifiedNavTokens.join(", ");
             document.getElementById("nav-link").href = "https://www.google.com/maps/dir/?api=1&destination=" + encodeURIComponent(verifiedAddress) + "&travelmode=driving";
@@ -1405,7 +1518,6 @@ if not master_df.empty:
 
                 if (s.arrived_at && !s.is_depot) {{
                     let elapsedMin = (Date.now() - s.arrived_at) / 60000.0;
-                    // Standard 5.0-minute dwell shock absorber
                     let delta = 5.0 - elapsedMin;
                     bankedMinutes += delta;
                 }}
