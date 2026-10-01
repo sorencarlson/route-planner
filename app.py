@@ -146,7 +146,7 @@ def geocode_single_nominatim(address, cache):
     if arc_coords:
         return arc_coords
 
-    geolocator = Nominatim(user_agent="cfs_field_app_geocoder_v30")
+    geolocator = Nominatim(user_agent="cfs_field_app_geocoder_v32")
     try:
         location = geolocator.geocode(address, addressdetails=True, timeout=6)
         if location:
@@ -196,7 +196,6 @@ def get_coordinates_and_failed_stops(stops_df, depot_address):
     return coords, valid_indices, failed_stops
 
 
-@st.cache_data(show_spinner=False)
 def build_road_distance_matrix_cached(coords):
     num_pts = len(coords)
     if num_pts <= 1:
@@ -514,9 +513,7 @@ def load_persisted_stops():
         try:
             df = pd.read_csv(PERSISTENT_FILE)
             if not df.empty and "Address" in df.columns:
-                return df.drop_duplicates(
-                    subset=["Inspection ID"], keep="last"
-                ).reset_index(drop=True)
+                return df.dropna(subset=["Address"]).reset_index(drop=True)
         except Exception:
             pass
     return pd.DataFrame(columns=["Inspection ID", "Address"])
@@ -524,8 +521,8 @@ def load_persisted_stops():
 
 def persist_stops(df):
     clean_df = (
-        df.drop_duplicates(subset=["Inspection ID"], keep="last")
-        .dropna(subset=["Address"])
+        df.dropna(subset=["Address"])
+        .drop_duplicates(subset=["Inspection ID"], keep="last")
         .reset_index(drop=True)
     )
     clean_df.to_csv(PERSISTENT_FILE, index=False)
@@ -536,7 +533,7 @@ def persist_stops(df):
 def search_address(query):
     if not query or len(query.strip()) < 3:
         return []
-    geolocator = Nominatim(user_agent="cfs_field_app_geocoder_v30")
+    geolocator = Nominatim(user_agent="cfs_field_app_geocoder_v32")
     try:
         locations = geolocator.geocode(query, exactly_one=False, limit=6)
         if locations:
@@ -625,6 +622,43 @@ if saved_route_files:
                     st.rerun()
             except Exception as e:
                 st.sidebar.error(f"Error loading file: {e}")
+
+# =========================================================================
+# DESKTOP: BULLETPROOF ADD STOP (FORCE GEOLOCATE & UNIQUE ID)
+# =========================================================================
+st.sidebar.markdown("---")
+with st.sidebar.expander("➕ Add Stop / Special Address", expanded=True):
+    manual_addr_in = st.text_input(
+        "Property Address:",
+        placeholder="e.g. 100 Main St, Alexandria, VA",
+        key="desk_add_addr_in",
+    )
+    manual_id_in = st.text_input(
+        "Work Order / Inspection ID:",
+        placeholder="e.g. SPECIAL-1 or Order #",
+        key="desk_add_id_in",
+    )
+    if st.sidebar.button("➕ Add Stop to Route", type="primary", use_container_width=True):
+        if manual_addr_in.strip():
+            cur_df = load_persisted_stops()
+            
+            # Form guaranteed unique ID
+            final_id = manual_id_in.strip()
+            if not final_id or final_id in cur_df["Inspection ID"].values:
+                final_id = f"ADD_{len(cur_df)+1}_{datetime.now().strftime('%H%M%S')}"
+
+            new_entry = pd.DataFrame([{"Inspection ID": final_id, "Address": manual_addr_in.strip()}])
+            updated_df = pd.concat([cur_df, new_entry], ignore_index=True)
+            persist_stops(updated_df)
+            
+            # Immediately prime the geocache
+            cache = load_cache()
+            geocode_single_nominatim(manual_addr_in.strip(), cache)
+
+            st.toast(f"Added stop: {final_id}!", icon="✅")
+            st.rerun()
+        else:
+            st.sidebar.warning("Please type an address first.")
 
 # Import CSV Files
 st.sidebar.markdown("---")
@@ -726,7 +760,7 @@ if not master_df.empty:
             f"⚠️ **Attention: {len(failed_stops)} Address(es) could not be mapped automatically!**"
         )
         with st.expander(
-            "🛠️ Click Here to Review & Fix Unresolved Addresses", expanded=True
+            "🛠️️ Click Here to Review & Fix Unresolved Addresses", expanded=True
         ):
             for item in failed_stops:
                 f_idx = item["Index"]
@@ -1091,7 +1125,8 @@ if not master_df.empty:
                 )
 
             stops_json_str = json.dumps(stops_payload)
-            route_sig = f"sig_{len(stops_payload)}_{planned_total_miles}_{total_inspections}"
+            # Route signature incorporates total count so adding stops clears the mobile deck cache
+            route_sig = f"sig_{len(stops_payload)}_{planned_total_miles}_{total_inspections}_{datetime.now().strftime('%d%H%M')}"
 
             deck_html = f"""<!DOCTYPE html>
 <html>
@@ -1561,7 +1596,7 @@ if not master_df.empty:
                 stops.splice(curIdx, 1);
                 if (curIdx >= stops.length) curIdx = Math.max(0, stops.length - 1);
                 updateDeck();
-                showToast("🗑️ Stop Deleted");
+                showToast("🗑️️ Stop Deleted");
             }}
         }}
 
