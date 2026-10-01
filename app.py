@@ -668,7 +668,7 @@ if not master_df.empty:
             f"⚠️ **Attention: {len(failed_stops)} Address(es) could not be mapped automatically!**"
         )
         with st.expander(
-            "🛠️ Click Here to Review & Fix Unresolved Addresses", expanded=True
+            "🛠️️ Click Here to Review & Fix Unresolved Addresses", expanded=True
         ):
             for item in failed_stops:
                 f_idx = item["Index"]
@@ -1115,7 +1115,7 @@ if not master_df.empty:
 
         .control-deck {{
             display: grid;
-            grid-template-columns: 1fr 1fr 1fr;
+            grid-template-columns: 1fr 1fr;
             gap: 8px;
             margin-bottom: 8px;
         }}
@@ -1123,9 +1123,9 @@ if not master_df.empty:
             background: #1c2541;
             color: #cbd5e1;
             border: 1px solid #3a506b;
-            padding: 12px 4px;
+            padding: 14px 4px;
             border-radius: 10px;
-            font-size: 0.80rem;
+            font-size: 0.90rem;
             font-weight: 700;
             cursor: pointer;
             text-align: center;
@@ -1197,7 +1197,6 @@ if not master_df.empty:
         <div class="card-info-box">
             <div class="info-line"><span class="info-bold">Planned Target:</span> <span id="disp-planned-arrival">--:--</span></div>
             <div class="info-line"><span class="info-bold">Work Order:</span> <span id="disp-order">--</span></div>
-            <div class="info-line" id="timer-box" style="display:none;"><span class="info-bold">Dwell Timer:</span> <span id="disp-timer">0:00</span> (5m buffer)</div>
         </div>
     </div>
 
@@ -1212,7 +1211,6 @@ if not master_df.empty:
 
     <div class="control-deck">
         <button class="btn-tool" onclick="openReoptMenu()">⚡ Re-Sync Options</button>
-        <button class="btn-tool" onclick="resetBankedTime()">⏱️ Reset Delta</button>
         <button class="btn-tool" onclick="openTimetableModal()">📋 Upcoming Stops</button>
     </div>
 
@@ -1247,9 +1245,7 @@ if not master_df.empty:
                 <button class="btn-secondary" style="padding: 6px 12px; margin: 0;" onclick="closeTimetableModal()">✕ Close</button>
             </div>
             
-            <div id="timetable-list" style="overflow-y: auto; flex: 1; padding-right: 4px;">
-                <!-- Dynamically generated stop cards render here -->
-            </div>
+            <div id="timetable-list" style="overflow-y: auto; flex: 1; padding-right: 4px;"></div>
         </div>
     </div>
 
@@ -1322,6 +1318,7 @@ if not master_df.empty:
                 d.setMinutes(mins);
                 d.setSeconds(0);
 
+                // Subtract banked minutes: faster work pulls arrival earlier
                 let adjusted = new Date(d.getTime() - (deltaMinutes * 60000));
                 
                 let outHrs = adjusted.getHours();
@@ -1354,13 +1351,11 @@ if not master_df.empty:
                 document.getElementById("hud-stop").innerText = s.is_finish_leg ? "END" : "START";
                 document.getElementById("disp-badge").className = "card-badge badge-depot";
                 document.getElementById("disp-badge").innerText = s.is_finish_leg ? "🏁 RETURN TO BASE" : "DEPARTURE BASE";
-                document.getElementById("timer-box").style.display = "none";
             }} else {{
                 let currentNum = stops.slice(0, curIdx + 1).filter(function(st) {{ return !st.is_depot && st.status !== "deleted"; }}).length;
                 document.getElementById("hud-stop").innerText = currentNum + "/" + totalActive;
                 document.getElementById("disp-badge").className = "card-badge badge-inspection";
                 document.getElementById("disp-badge").innerText = "INSPECTION #" + currentNum + " OF " + totalActive;
-                document.getElementById("timer-box").style.display = "block";
             }}
 
             document.getElementById("hud-left").innerText = inspsLeft;
@@ -1374,6 +1369,7 @@ if not master_df.empty:
             document.getElementById("hud-driven").innerText = Math.round(drivenMiles) + " mi";
             document.getElementById("hud-to-office").innerText = Math.round(MASTER_TOTAL_MILES) + " mi";
 
+            // Office ETA shifts dynamically based on banked delta
             let dynamicFinish = applyDeltaToTimeString(baselineFinishStr, bankedMinutes);
             document.getElementById("hud-finish").innerText = dynamicFinish;
 
@@ -1385,6 +1381,7 @@ if not master_df.empty:
             let plannedArrivalAdjusted = applyDeltaToTimeString(s.planned_arrival, bankedMinutes);
             document.getElementById("disp-planned-arrival").innerText = plannedArrivalAdjusted;
 
+            // Verified destination string to Google Maps
             let verifiedNavTokens = [s.street, s.city || "Front Royal", s.state || "VA", s.zip].filter(Boolean);
             let verifiedAddress = verifiedNavTokens.join(", ");
             document.getElementById("nav-link").href = "https://www.google.com/maps/dir/?api=1&destination=" + encodeURIComponent(verifiedAddress) + "&travelmode=driving";
@@ -1408,6 +1405,7 @@ if not master_df.empty:
 
                 if (s.arrived_at && !s.is_depot) {{
                     let elapsedMin = (Date.now() - s.arrived_at) / 60000.0;
+                    // Standard 5.0-minute dwell shock absorber
                     let delta = 5.0 - elapsedMin;
                     bankedMinutes += delta;
                 }}
@@ -1443,12 +1441,6 @@ if not master_df.empty:
                 if (curIdx === 0 && stops[0].is_depot && stops.length > 1) curIdx = 1;
                 updateDeck();
             }}
-        }}
-
-        function resetBankedTime() {{
-            bankedMinutes = 0.0;
-            updateDeck();
-            showToast("⏱️️ Delta buffer reset to zero");
         }}
 
         function openReoptMenu() {{
@@ -1605,18 +1597,6 @@ if not master_df.empty:
                     updateDeck();
                 }});
         }}
-
-        setInterval(function() {{
-            if (stops && stops.length > 0 && curIdx < stops.length) {{
-                const s = stops[curIdx];
-                if (s.arrived_at && !s.is_depot && s.status === "pending") {{
-                    let sec = Math.floor((Date.now() - s.arrived_at) / 1000);
-                    let m = Math.floor(sec / 60);
-                    let sRem = sec % 60;
-                    document.getElementById("disp-timer").innerText = m + ":" + (sRem < 10 ? "0" : "") + sRem;
-                }}
-            }}
-        }}, 1000);
 
         window.onload = updateDeck;
         updateDeck();
