@@ -144,7 +144,7 @@ def geocode_single_nominatim(address, cache):
     if arc_coords:
         return arc_coords
 
-    geolocator = Nominatim(user_agent="cfs_field_geocoder_us_v40")
+    geolocator = Nominatim(user_agent="cfs_field_geocoder_us_v43")
     try:
         clean_addr = strip_unit_designation(address)
         location = geolocator.geocode(
@@ -424,6 +424,174 @@ def calculate_schedule(coords, routes, dist_matrix, dur_matrix, start_time_obj, 
     return schedules
 
 
+def export_printable_run_sheet_html(sched_df, inspector_name, depot_addr, route_date_str):
+    total_miles = sched_df.iloc[-1]["Total Miles"] if not sched_df.empty else 0.0
+    start_time_str = sched_df.iloc[0]["Arrival"] if not sched_df.empty else "--"
+    end_time_str = sched_df.iloc[-1]["Arrival"] if not sched_df.empty else "--"
+    
+    stops = []
+    for _, r in sched_df.iterrows():
+        raw_id = str(r["Inspection ID"]).strip()
+        addr = str(r.get("Address", "")).strip()
+        if raw_id.upper() in ["BASE", "BASE RETURN", "DEPOT", ""] or addr.startswith("Start:") or addr.startswith("End:"):
+            continue
+        
+        clean_id = raw_id.split("/")[-1].strip() if "/" in raw_id else raw_id
+        stops.append({
+            "stop_num": len(stops) + 1,
+            "id": clean_id,
+            "address": addr,
+            "arrival": r["Arrival"],
+            "total_miles": r["Total Miles"]
+        })
+
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Daily Field Sheet - {inspector_name} - {route_date_str}</title>
+<style>
+    @page {{
+        size: letter portrait;
+        margin: 0.5in;
+    }}
+    body {{
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+        color: #111;
+        margin: 0;
+        padding: 0;
+        font-size: 11pt;
+        line-height: 1.35;
+    }}
+    .tax-header {{
+        border-bottom: 2px solid #000;
+        padding-bottom: 8px;
+        margin-bottom: 16px;
+    }}
+    .tax-title {{
+        font-size: 16pt;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin: 0 0 4px 0;
+    }}
+    .meta-grid {{
+        display: flex;
+        justify-content: space-between;
+        font-size: 10pt;
+        font-weight: 600;
+        margin-top: 4px;
+    }}
+    .summary-badge {{
+        font-size: 11pt;
+        font-weight: 800;
+        background: #eee;
+        padding: 4px 8px;
+        border-radius: 4px;
+    }}
+    .stop-row {{
+        padding: 7px 0;
+        border-bottom: 1px solid #e0e0e0;
+        display: flex;
+        align-items: baseline;
+        page-break-inside: avoid;
+    }}
+    .checkbox-box {{
+        font-family: monospace;
+        font-size: 14pt;
+        font-weight: bold;
+        width: 32px;
+    }}
+    .stop-num {{
+        font-weight: 800;
+        width: 75px;
+    }}
+    .stop-main {{
+        flex-grow: 1;
+        padding-right: 15px;
+    }}
+    .stop-id {{
+        font-weight: 700;
+        color: #000;
+    }}
+    .stop-addr {{
+        color: #222;
+        margin-top: 1px;
+    }}
+    .stop-time {{
+        width: 100px;
+        text-align: right;
+        font-weight: 700;
+    }}
+    .stop-miles {{
+        width: 80px;
+        text-align: right;
+        font-weight: 600;
+        color: #444;
+    }}
+    .footer-note {{
+        margin-top: 20px;
+        font-size: 8.5pt;
+        color: #666;
+        border-top: 1px solid #ccc;
+        padding-top: 6px;
+        text-align: center;
+    }}
+    @media print {{
+        .no-print {{ display: none !important; }}
+    }}
+</style>
+</head>
+<body>
+
+<div class="no-print" style="background:#fef3c7; border:1px solid #f59e0b; padding:10px; margin-bottom:15px; border-radius:6px; display:flex; justify-content:space-between; align-items:center;">
+    <span>📄 <strong>Print-Ready Run Sheet:</strong> Click button to print or save as PDF for tax records.</span>
+    <button onclick="window.print()" style="background:#0284c7; color:#fff; font-weight:bold; padding:8px 16px; border:none; border-radius:5px; cursor:pointer;">🖨️ Print Document</button>
+</div>
+
+<div class="tax-header">
+    <div class="tax-title">Carlson Field Services — Daily Inspection Run Sheet</div>
+    <div class="meta-grid">
+        <div><strong>Inspector:</strong> {inspector_name} | <strong>Date:</strong> {route_date_str}</div>
+        <div><strong>Base:</strong> {depot_addr}</div>
+    </div>
+    <div class="meta-grid" style="margin-top: 6px;">
+        <div><strong>Active Stops:</strong> {len(stops)} properties</div>
+        <div><strong>Planned Span:</strong> {start_time_str} – {end_time_str}</div>
+        <div class="summary-badge">Total Route: {total_miles:.1f} Miles</div>
+    </div>
+</div>
+
+<div class="stop-list">
+"""
+
+    for s in stops:
+        html += f"""
+    <div class="stop-row">
+        <div class="checkbox-box">[ &nbsp; ]</div>
+        <div class="stop-num">Stop #{s['stop_num']}</div>
+        <div class="stop-main">
+            <span class="stop-id">ID: {s['id']}</span> &mdash; 
+            <span class="stop-addr">{s['address']}</span>
+        </div>
+        <div class="stop-time">{s['arrival']}</div>
+        <div class="stop-miles">{s['total_miles']:.1f} mi</div>
+    </div>
+"""
+
+    html += f"""
+</div>
+
+<div class="footer-note">
+    Official Carlson Field Services daily mileage & route log for tax year {datetime.now().year}. Generated {datetime.now().strftime('%B %d, %Y at %I:%M %p')}.
+</div>
+
+</body>
+</html>
+"""
+    return html
+
+
 def export_waypoints_gpx(sched_df):
     gpx_xml = [
         '<?xml version="1.0" encoding="UTF-8"?>',
@@ -511,7 +679,7 @@ def persist_stops(df):
 def search_address(query):
     if not query or len(query.strip()) < 3:
         return []
-    geolocator = Nominatim(user_agent="cfs_field_geocoder_us_v40")
+    geolocator = Nominatim(user_agent="cfs_field_geocoder_us_v43")
     try:
         locations = geolocator.geocode(
             query,
@@ -537,7 +705,7 @@ view_mode = st.sidebar.radio(
 )
 
 st.sidebar.markdown("---")
-st.sidebar.header("⚙️️ Route Settings")
+st.sidebar.header("⚙️ Route Settings")
 
 start_input = st.sidebar.text_input("Starting Address / Base:", "2644 S Shirlington Rd, Arlington, VA")
 start_suggestions = search_address(start_input)
@@ -820,7 +988,7 @@ if not master_df.empty:
 
             st.markdown("---")
 
-            # 2. Reordering & Managing Stops
+            # 2. Dropdown Position Shifter
             st.markdown(f"### 📋 Manage Route Sequence & Reorder ({len(valid_master_df)} Active)")
             
             with st.expander("🔀 Move Individual Stop Position", expanded=True):
@@ -837,7 +1005,7 @@ if not master_df.empty:
                 target_pos = move_col2.selectbox(
                     "Move to Position #:", 
                     target_positions, 
-                    index=min(current_move_idx, len(target_positions) - 1)
+                    index=min(current_move_idx - 1, len(target_positions) - 1)
                 )
 
                 move_col3.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
@@ -855,7 +1023,7 @@ if not master_df.empty:
                         st.toast(f"Moved Stop #{current_move_idx} to Position #{target_pos}!", icon="🔀")
                         st.rerun()
 
-            # 3. Map & Stops Quick Prune
+            # 3. Map & Prune
             col_stops_admin, col_map_disp = st.columns([1, 1], gap="medium")
             
             with col_stops_admin:
@@ -896,31 +1064,47 @@ if not master_df.empty:
                     with open("route_map.html", "r", encoding="utf-8") as f:
                         components.html(f.read(), height=480)
 
-            # 4. FULL ON-SCREEN TIMETABLE (NO EXPORT REQUIRED)
+            # 4. INSPECTOR 5-COLUMN RUN SHEET & TIMETABLE
             st.markdown("---")
-            st.markdown("### 🕒 Complete Route Timetable")
+            st.markdown("### 📋 Inspector Run Sheet & Arrival Times")
             
-            display_sched = sched_df[[
-                "Stop Number", "Inspection ID", "Address", "Arrival", "Departure", "Leg Miles", "Total Miles"
-            ]].copy()
+            checklist_rows = []
+            for _, r in sched_df.iterrows():
+                raw_id = str(r["Inspection ID"]).strip()
+                addr_str = str(r.get("Address", ""))
+                
+                if raw_id.upper() in ["BASE", "BASE RETURN", "DEPOT", ""] or addr_str.startswith("Start:") or addr_str.startswith("End:"):
+                    continue
+                
+                clean_id = raw_id.split("/")[-1].strip() if "/" in raw_id else raw_id
+                
+                checklist_rows.append({
+                    "Completed": "[  ]",
+                    "Stop #": len(checklist_rows) + 1,
+                    "Inspection ID": clean_id,
+                    "Address": addr_str,
+                    "Arrival Time": r["Arrival"],
+                    "Total Miles": round(float(r["Total Miles"]), 1)
+                })
+            
+            checklist_df = pd.DataFrame(checklist_rows)
             
             st.dataframe(
-                display_sched,
+                checklist_df[["Completed", "Stop #", "Inspection ID", "Address", "Arrival Time", "Total Miles"]],
                 column_config={
-                    "Stop Number": st.column_config.NumberColumn("Stop #", width="small"),
-                    "Inspection ID": st.column_config.TextColumn("ID", width="medium"),
-                    "Address": st.column_config.TextColumn("Address", width="large"),
-                    "Arrival": st.column_config.TextColumn("Arrival Time", width="medium"),
-                    "Departure": st.column_config.TextColumn("Departure Time", width="medium"),
-                    "Leg Miles": st.column_config.NumberColumn("Leg (mi)", format="%.1f", width="small"),
-                    "Total Miles": st.column_config.NumberColumn("Cum (mi)", format="%.1f", width="small"),
+                    "Completed": st.column_config.TextColumn("Check", width="small"),
+                    "Stop #": st.column_config.NumberColumn("Stop #", width="small"),
+                    "Inspection ID": st.column_config.TextColumn("Work Order / ID", width="medium"),
+                    "Address": st.column_config.TextColumn("Property Address", width="large"),
+                    "Arrival Time": st.column_config.TextColumn("Arrival Target", width="medium"),
+                    "Total Miles": st.column_config.NumberColumn("Total Miles (mi)", format="%.1f", width="small"),
                 },
                 hide_index=True,
                 use_container_width=True,
-                height=450
+                height=420
             )
 
-            # 5. Save & Export Controls
+            # 5. SAVE ROUTE & DOWNLOAD CONTROLS
             st.markdown("---")
             st.subheader(f"💾 Save Route & Export Data ({inspector_profile})")
             exp_col1, exp_col2, exp_col3, exp_col4 = st.columns(4)
@@ -936,13 +1120,19 @@ if not master_df.empty:
                     st.rerun()
 
             with exp_col2:
-                csv_bytes = sched_df.to_csv(index=False).encode("utf-8")
+                # Printable Field Sheet (Clean format, no spreadsheet lines)
+                printable_sheet_html = export_printable_run_sheet_html(
+                    sched_df, 
+                    inspector_profile, 
+                    depot_address, 
+                    datetime.now().strftime('%A, %B %d, %Y')
+                )
                 st.download_button(
-                    label="📥 Download CSV Timetable",
-                    data=csv_bytes,
-                    file_name=f"{route_save_name}_timetable.csv",
-                    mime="text/csv",
-                    key=f"desk_dl_csv_{inspector_slug}",
+                    label="🖨️ Download Printable Run Sheet (HTML/Doc)",
+                    data=printable_sheet_html.encode("utf-8"),
+                    file_name=f"{route_save_name}_run_sheet.html",
+                    mime="text/html",
+                    key=f"desk_dl_print_{inspector_slug}",
                     use_container_width=True
                 )
 
