@@ -144,7 +144,7 @@ def geocode_single_nominatim(address, cache):
     if arc_coords:
         return arc_coords
 
-    geolocator = Nominatim(user_agent="cfs_field_geocoder_us_v45")
+    geolocator = Nominatim(user_agent="cfs_field_geocoder_us_v46")
     try:
         clean_addr = strip_unit_designation(address)
         location = geolocator.geocode(
@@ -660,7 +660,7 @@ def export_directions_txt(sched_df):
 # =========================================================================
 # 2. STREAMLIT APP & MULTI-INSPECTOR ISOLATION
 # =========================================================================
-st.set_page_config(page_title="Route Planner & Mobile App", layout="wide")
+st.set_page_config(page_title="CFS Route & Fleet Suite", layout="wide")
 
 st.sidebar.markdown("### 👤 Inspector Workspace")
 inspector_profile = st.sidebar.selectbox(
@@ -701,7 +701,7 @@ def persist_stops(df):
 def search_address(query):
     if not query or len(query.strip()) < 3:
         return []
-    geolocator = Nominatim(user_agent="cfs_field_geocoder_us_v45")
+    geolocator = Nominatim(user_agent="cfs_field_geocoder_us_v46")
     try:
         locations = geolocator.geocode(
             query,
@@ -719,9 +719,9 @@ def search_address(query):
 
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("### 🔀 Display View")
+st.sidebar.markdown("### 🔀 Workspace Navigation")
 view_mode = st.sidebar.radio(
-    "Choose Interface Mode:",
+    "Active Mode:",
     ["🖥️ Desktop Planner", "📱 Mobile Driver Deck"],
     index=0,
 )
@@ -744,7 +744,7 @@ stop_duration = st.sidebar.number_input(
 
 # Recall Saved Route (Filtered by Workspace)
 st.sidebar.markdown("---")
-st.sidebar.subheader(f"📂 Recall Saved Route ({inspector_profile})")
+st.sidebar.subheader(f"📂 Saved Routes ({inspector_profile})")
 all_saved_files = glob.glob(os.path.join(SAVED_DIR, "*.csv"))
 inspector_saved_files = sorted(
     [f for f in all_saved_files if inspector_slug in os.path.basename(f).lower() or not any(s in os.path.basename(f).lower() for s in ["soren", "huny", "driver_3", "driver_4"])],
@@ -753,10 +753,10 @@ inspector_saved_files = sorted(
 )
 
 if inspector_saved_files:
-    file_options = ["-- Select a saved route --"] + [os.path.basename(f) for f in inspector_saved_files]
+    file_options = ["-- Select saved route --"] + [os.path.basename(f) for f in inspector_saved_files]
     selected_saved = st.sidebar.selectbox("Choose From Saved Routes:", file_options)
     if st.sidebar.button("📥 Open Route", key="btn_load_saved"):
-        if selected_saved != "-- Select a saved route --":
+        if selected_saved != "-- Select saved route --":
             target_path = os.path.join(SAVED_DIR, selected_saved)
             try:
                 loaded_df = pd.read_csv(target_path)
@@ -815,9 +815,9 @@ with st.sidebar.expander("➕ Add Stop / Special Address", expanded=False):
 
 # Import CSV Files
 st.sidebar.markdown("---")
-st.sidebar.subheader("📁 Import CSV Files")
+st.sidebar.subheader("📁 Import Spreadsheets")
 uploaded_files = st.sidebar.file_uploader(
-    f"Upload Spreadsheets for {inspector_profile}", type=["csv"], accept_multiple_files=True
+    f"Upload CSV for {inspector_profile}", type=["csv"], accept_multiple_files=True
 )
 
 master_df = load_persisted_stops()
@@ -857,9 +857,9 @@ if uploaded_files:
 
 # Route Controls
 st.sidebar.markdown("---")
-btn_reverse = st.sidebar.button("⇄ Reverse Entire Route Order", use_container_width=True)
+btn_reverse = st.sidebar.button("⇄ Reverse Route Order", use_container_width=True)
 
-if st.sidebar.button(f"🔄 Clear {inspector_profile}'s Route & Start Fresh", use_container_width=True):
+if st.sidebar.button(f"🔄 Clear Route & Start Fresh", use_container_width=True):
     if os.path.exists(PERSISTENT_FILE):
         try:
             os.remove(PERSISTENT_FILE)
@@ -1086,7 +1086,7 @@ if not master_df.empty:
                     with open("route_map.html", "r", encoding="utf-8") as f:
                         components.html(f.read(), height=480)
 
-            # 4. INSPECTOR 5-COLUMN RUN SHEET & TIMETABLE
+            # 4. INSPECTOR RUN SHEET & TIMETABLE
             st.markdown("---")
             st.markdown("### 📋 Inspector Run Sheet & Arrival Times")
             
@@ -1180,7 +1180,7 @@ if not master_df.empty:
                 )
 
         # =========================================================================
-        # VIEW 2: MOBILE DRIVER DECK (DIRECT CLOCK & COUNTDOWN RANGE)
+        # VIEW 2: MOBILE DRIVER DECK (COMMERCIAL ENTERPRISE UI & DIRECT SYNC)
         # =========================================================================
         elif view_mode == "📱 Mobile Driver Deck":
             final_row = sched_df.iloc[-1]
@@ -1248,285 +1248,480 @@ if not master_df.empty:
             stops_json_str = json.dumps(stops_payload)
             route_sig = f"sig_{inspector_slug}_{len(stops_payload)}_{total_inspections}_{datetime.now().strftime('%d%H%M')}"
 
+            # Modern Commercial Mobile PWA Front-End
             deck_html = f"""<!DOCTYPE html>
 <html>
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
     <style>
-        * {{ box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }}
-        body {{ margin: 0; padding: 8px; background-color: #0b132b; color: #f3f4f6; }}
+        :root {{
+            --bg-base: #090D16;
+            --bg-card: #111827;
+            --bg-card-sub: #1A2234;
+            --border-subtle: #1F2937;
+            --border-accent: #374151;
+            --text-main: #F9FAFB;
+            --text-muted: #9CA3AF;
+            --primary-accent: #2563EB;
+            --primary-glow: rgba(37, 99, 235, 0.35);
+            --success-accent: #10B981;
+            --warn-accent: #F59E0B;
+        }}
+        * {{ box-sizing: border-box; -webkit-tap-highlight-color: transparent; }}
+        body {{
+            margin: 0;
+            padding: 8px 10px 90px 10px;
+            background-color: var(--bg-base);
+            color: var(--text-main);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }}
         
         #toast {{
             visibility: hidden;
-            min-width: 260px;
-            background-color: #059669;
-            color: #fff;
+            min-width: 200px;
+            background-color: #10B981;
+            color: #FFFFFF;
             text-align: center;
-            border-radius: 10px;
-            padding: 12px;
+            border-radius: 9999px;
+            padding: 10px 20px;
             position: fixed;
             z-index: 99999;
             left: 50%;
-            top: 16px;
+            top: 14px;
             transform: translateX(-50%);
-            font-size: 0.95rem;
-            font-weight: 800;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
-        }}
-        #toast.show {{
-            visibility: visible;
-            animation: fadein 0.2s, fadeout 0.3s 2.0s;
-        }}
-        @keyframes fadein {{ from {{ top: 0; opacity: 0; }} to {{ top: 16px; opacity: 1; }} }}
-        @keyframes fadeout {{ from {{ top: 16px; opacity: 1; }} to {{ top: 0; opacity: 0; }} }}
-
-        .hud-bar {{
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            background: #111827;
-            border: 1px solid #1f2937;
-            border-radius: 12px;
-            padding: 10px 4px;
-            margin-bottom: 12px;
-            text-align: center;
-        }}
-        .hud-label {{ font-size: 0.62rem; color: #9ca3af; text-transform: uppercase; font-weight: 800; margin-bottom: 2px; }}
-        .hud-val {{ font-size: 1.05rem; font-weight: 800; }}
-        .c-green {{ color: #34d399; }}
-        .c-orange {{ color: #fb923c; }}
-        .c-yellow {{ color: #fbbf24; }}
-        .c-cyan {{ color: #38bdf8; }}
-        .hud-sep {{ border-left: 1px solid #1f2937; }}
-
-        .card {{
-            background: #1c2541;
-            border: 1px solid #3a506b;
-            border-radius: 14px;
-            padding: 16px;
-            margin-bottom: 12px;
-            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
-        }}
-        .card-badge {{
-            display: inline-block;
-            padding: 3px 8px;
-            font-size: 0.75rem;
-            font-weight: 800;
-            border-radius: 6px;
-            margin-bottom: 8px;
-            text-transform: uppercase;
-        }}
-        .badge-inspection {{ background: #1e3a8a; color: #93c5fd; }}
-        .badge-depot {{ background: #4b5563; color: #f3f4f6; }}
-
-        .card-title {{ font-size: 1.35rem; font-weight: 800; color: #ffffff; margin: 0 0 4px 0; line-height: 1.25; }}
-        .card-city {{ font-size: 1.05rem; color: #60a5fa; margin-bottom: 12px; font-weight: 700; }}
-        .card-info-box {{
-            background: #0b132b;
-            border-radius: 8px;
-            padding: 10px 12px;
-            margin-top: 8px;
-            border-left: 4px solid #3b82f6;
-        }}
-        .info-line {{ font-size: 0.95rem; margin: 4px 0; color: #e5e7eb; }}
-        .info-bold {{ font-weight: 700; color: #93c5fd; }}
-
-        .btn-nav {{
-            display: block;
-            width: 100%;
-            background: linear-gradient(135deg, #2563eb, #1d4ed8);
-            color: #ffffff;
-            text-align: center;
-            text-decoration: none;
-            padding: 15px;
-            border-radius: 12px;
-            font-size: 1.15rem;
-            font-weight: 800;
-            margin-bottom: 10px;
-            border: none;
-            cursor: pointer;
-        }}
-        .btn-next {{
-            display: block;
-            width: 100%;
-            background: linear-gradient(135deg, #059669, #10b981);
-            color: #ffffff;
-            padding: 18px;
-            border-radius: 14px;
-            font-size: 1.3rem;
-            font-weight: 900;
-            letter-spacing: 0.5px;
-            border: none;
-            cursor: pointer;
-            box-shadow: 0 4px 14px rgba(16, 185, 129, 0.4);
-            margin-bottom: 10px;
-            text-transform: uppercase;
-        }}
-        .btn-next:active {{ transform: scale(0.98); background: #047857; }}
-
-        .btn-row {{
-            display: grid;
-            grid-template-columns: 1fr 1fr 1fr;
-            gap: 8px;
-            margin-bottom: 10px;
-        }}
-        .btn-secondary {{
-            background: #1f2937;
-            color: #d1d5db;
-            padding: 12px 6px;
-            border-radius: 10px;
             font-size: 0.85rem;
             font-weight: 700;
-            border: 1px solid #374151;
-            cursor: pointer;
+            letter-spacing: 0.3px;
+            box-shadow: 0 10px 25px -5px rgba(16, 185, 129, 0.4);
+            transition: all 0.25s ease;
+        }}
+        #toast.show {{ visibility: visible; top: 22px; }}
+
+        /* Commercial Aviation HUD Header */
+        .hud-grid {{
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            background: rgba(17, 24, 39, 0.85);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--border-subtle);
+            border-radius: 14px;
+            padding: 10px 4px;
+            margin-bottom: 10px;
+            box-shadow: 0 4px 20px -2px rgba(0,0,0,0.5);
             text-align: center;
         }}
-        .btn-warn {{ background: #7c2d12; color: #fecaca; border: none; }}
-        .btn-danger {{ background: #881337; color: #fecdd3; border: none; }}
+        .hud-cell {{
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }}
+        .hud-cell:not(:last-child) {{
+            border-right: 1px solid rgba(255, 255, 255, 0.06);
+        }}
+        .hud-label {{
+            font-size: 0.62rem;
+            font-weight: 700;
+            color: #64748B;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            margin-bottom: 3px;
+        }}
+        .hud-val {{
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.05rem;
+            font-weight: 700;
+            line-height: 1.1;
+        }}
+        .val-done {{ color: #34D399; }}
+        .val-left {{ color: #F59E0B; }}
+        .val-range {{ color: #38BDF8; }}
+        .val-eta {{ color: #A78BFA; }}
 
-        .control-deck {{
+        /* Executive Property Card */
+        .property-card {{
+            background: linear-gradient(180deg, #131C2E 0%, #0E1626 100%);
+            border: 1px solid var(--border-subtle);
+            border-radius: 16px;
+            padding: 16px 14px;
+            margin-bottom: 10px;
+            box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.6);
+            position: relative;
+            overflow: hidden;
+        }}
+        .property-card::after {{
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(56, 189, 248, 0.25), transparent);
+        }}
+        .card-header-bar {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }}
+        .status-pill {{
+            display: inline-flex;
+            align-items: center;
+            padding: 3px 8px;
+            border-radius: 6px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.4px;
+            text-transform: uppercase;
+        }}
+        .pill-inspection {{
+            background: rgba(37, 99, 235, 0.16);
+            color: #93C5FD;
+            border: 1px solid rgba(59, 130, 246, 0.3);
+        }}
+        .pill-depot {{
+            background: rgba(100, 116, 139, 0.16);
+            color: #CBD5E1;
+            border: 1px solid rgba(148, 163, 184, 0.25);
+        }}
+        .card-time-badge {{
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: #38BDF8;
+            background: rgba(15, 23, 42, 0.8);
+            padding: 3px 8px;
+            border-radius: 6px;
+            border: 1px solid rgba(56, 189, 248, 0.2);
+        }}
+        .property-title {{
+            font-size: 1.25rem;
+            font-weight: 800;
+            color: #FFFFFF;
+            letter-spacing: -0.3px;
+            line-height: 1.25;
+            margin: 0 0 4px 0;
+        }}
+        .property-subtitle {{
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: #94A3B8;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }}
+        .property-metadata {{
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            background: rgba(9, 13, 22, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            padding: 8px 10px;
+        }}
+        .meta-col {{ display: flex; flex-direction: column; }}
+        .meta-caption {{ font-size: 0.64rem; font-weight: 600; color: #64748B; text-transform: uppercase; }}
+        .meta-content {{ font-family: 'JetBrains Mono', monospace; font-size: 0.88rem; font-weight: 700; color: #E2E8F0; margin-top: 1px; }}
+
+        /* Primary Action Buttons */
+        .btn-maps {{
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            width: 100%;
+            background: #1E293B;
+            border: 1px solid #334155;
+            color: #E2E8F0;
+            text-decoration: none;
+            padding: 13px;
+            border-radius: 12px;
+            font-size: 0.95rem;
+            font-weight: 700;
+            margin-bottom: 8px;
+            transition: all 0.15s ease;
+        }}
+        .btn-maps:active {{
+            background: #0F172A;
+            transform: scale(0.99);
+        }}
+        .btn-complete {{
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            width: 100%;
+            background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+            border: none;
+            color: #FFFFFF;
+            padding: 16px;
+            border-radius: 14px;
+            font-size: 1.12rem;
+            font-weight: 800;
+            letter-spacing: 0.3px;
+            cursor: pointer;
+            box-shadow: 0 6px 20px -3px rgba(16, 185, 129, 0.4);
+            margin-bottom: 10px;
+            transition: all 0.15s ease;
+        }}
+        .btn-complete:active {{
+            background: #047857;
+            transform: scale(0.98);
+        }}
+
+        /* Secondary Action Controls */
+        .btn-trio {{
             display: grid;
             grid-template-columns: 1fr 1fr 1fr;
-            gap: 8px;
-            margin-bottom: 8px;
+            gap: 6px;
+            margin-bottom: 10px;
         }}
-        .btn-tool {{
-            background: #1c2541;
-            color: #cbd5e1;
-            border: 1px solid #3a506b;
-            padding: 14px 4px;
+        .btn-control {{
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+            background: #111827;
+            border: 1px solid #1F2937;
+            color: #94A3B8;
+            padding: 10px 4px;
             border-radius: 10px;
-            font-size: 0.82rem;
+            font-size: 0.8rem;
             font-weight: 700;
             cursor: pointer;
-            text-align: center;
+            transition: all 0.1s ease;
         }}
-        .btn-tool:active {{ background: #3a506b; }}
+        .btn-control:active {{ background: #1E293B; color: #FFFFFF; transform: scale(0.98); }}
+        .btn-control-danger:active {{ background: #7F1D1D; color: #FECDD3; }}
 
-        .modal-overlay {{
+        .dock-bar {{
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 6px;
+        }}
+        .btn-dock {{
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            background: #151D2F;
+            border: 1px solid #23304B;
+            color: #CBD5E1;
+            padding: 12px 6px;
+            border-radius: 10px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            cursor: pointer;
+        }}
+        .btn-dock:active {{ background: #23304B; transform: scale(0.98); }}
+
+        /* Commercial Bottom-Sheet Drawers */
+        .drawer-overlay {{
             display: none;
             position: fixed;
             z-index: 10000;
             left: 0; top: 0; width: 100%; height: 100%;
-            background: rgba(0, 0, 0, 0.85);
-            padding: 18px;
+            background: rgba(0, 0, 0, 0.75);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
         }}
-        .modal-sheet {{
-            background: #161e2e;
-            border-radius: 14px;
-            padding: 20px;
-            margin-top: 30px;
-            border: 1px solid #3a506b;
+        .drawer-sheet {{
+            position: fixed;
+            bottom: 0; left: 0; right: 0;
+            background: #111827;
+            border-top: 1px solid #374151;
+            border-radius: 20px 20px 0 0;
+            padding: 16px 16px 28px 16px;
+            max-height: 85vh;
+            overflow-y: auto;
+            box-shadow: 0 -10px 30px rgba(0,0,0,0.7);
+            animation: slideUp 0.22s ease-out;
         }}
-        .modal-opt-btn {{
+        @keyframes slideUp {{
+            from {{ transform: translateY(100%); }}
+            to {{ transform: translateY(0); }}
+        }}
+        .drawer-handle {{
+            width: 40px; height: 4px;
+            background: #374151;
+            border-radius: 9999px;
+            margin: 0 auto 14px auto;
+        }}
+        .drawer-btn-tile {{
             width: 100%;
-            background: #1e293b;
-            border: 1px solid #334155;
-            color: white;
+            background: #1A2234;
+            border: 1px solid #2A364F;
+            color: #FFFFFF;
             padding: 14px;
-            border-radius: 10px;
-            margin-bottom: 12px;
+            border-radius: 12px;
+            margin-bottom: 10px;
             text-align: left;
             cursor: pointer;
         }}
-        .modal-opt-btn strong {{ font-size: 1.05rem; display: block; color: #38bdf8; }}
-        .modal-opt-btn span {{ font-size: 0.82rem; color: #94a3b8; }}
+        .drawer-btn-tile strong {{ font-size: 0.95rem; display: block; color: #38BDF8; margin-bottom: 2px; }}
+        .drawer-btn-tile span {{ font-size: 0.78rem; color: #94A3B8; }}
+
+        .modal-input {{
+            width: 100%;
+            padding: 12px 14px;
+            margin-bottom: 8px;
+            border-radius: 10px;
+            background: #090D16;
+            color: #FFFFFF;
+            border: 1px solid #374151;
+            font-size: 0.92rem;
+            font-family: inherit;
+        }}
+        .modal-input:focus {{ outline: none; border-color: #38BDF8; }}
     </style>
 </head>
 <body>
 
-    <div id="toast">💾 Updated!</div>
+    <div id="toast">Route Updated</div>
 
-    <div class="hud-bar">
-        <div>
-            <div class="hud-label">Completed</div>
-            <div class="hud-val c-green" id="hud-done">0</div>
+    <!-- Commercial Aviation HUD Bar -->
+    <div class="hud-grid">
+        <div class="hud-cell">
+            <span class="hud-label">Completed</span>
+            <span class="hud-val val-done" id="hud-done">0</span>
         </div>
-        <div>
-            <div class="hud-label">Stops Left</div>
-            <div class="hud-val c-orange" id="hud-left">{total_inspections}</div>
+        <div class="hud-cell">
+            <span class="hud-label">Remaining</span>
+            <span class="hud-val val-left" id="hud-left">{total_inspections}</span>
         </div>
-        <div>
-            <div class="hud-label">Miles to Go</div>
-            <div class="hud-val c-yellow" id="hud-miles-left">-- mi</div>
+        <div class="hud-cell">
+            <span class="hud-label">Miles to Go</span>
+            <span class="hud-val val-range" id="hud-miles-left">-- mi</span>
         </div>
-        <div class="hud-sep">
-            <div class="hud-label">Base ETA</div>
-            <div class="hud-val c-cyan" id="hud-finish">--:--</div>
+        <div class="hud-cell">
+            <span class="hud-label">Target Return</span>
+            <span class="hud-val val-eta" id="hud-finish">--:--</span>
         </div>
     </div>
 
-    <div class="card">
-        <span class="card-badge" id="disp-badge">Inspection Stop</span>
-        <div class="card-title" id="disp-addr">Loading...</div>
-        <div class="card-city" id="disp-city"></div>
+    <!-- Active Property Card -->
+    <div class="property-card">
+        <div class="card-header-bar">
+            <span class="status-pill pill-inspection" id="disp-badge">Inspection #1</span>
+            <span class="card-time-badge" id="disp-planned-arrival">--:--</span>
+        </div>
         
-        <div class="card-info-box">
-            <div class="info-line"><span class="info-bold">Estimated Arrival:</span> <span id="disp-planned-arrival">--:--</span></div>
-            <div class="info-line"><span class="info-bold">Work Order:</span> <span id="disp-order">--</span></div>
+        <div class="property-title" id="disp-addr">Loading Property...</div>
+        <div class="property-subtitle" id="disp-city">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+            <span id="disp-city-text">--</span>
+        </div>
+
+        <div class="property-metadata">
+            <div class="meta-col">
+                <span class="meta-caption">Work Order / ID</span>
+                <span class="meta-content" id="disp-order">--</span>
+            </div>
+            <div class="meta-col">
+                <span class="meta-caption">Leg Distance</span>
+                <span class="meta-content" id="disp-leg-dist">-- mi</span>
+            </div>
         </div>
     </div>
 
-    <a id="nav-link" href="#" target="_blank" class="btn-nav">📍 Open in Google Maps</a>
-    <button id="btn-next-action" class="btn-next" onclick="completeStop()">Next Stop (Complete) ⏩</button>
+    <!-- Navigation & Primary Complete CTA -->
+    <a id="nav-link" href="#" target="_blank" class="btn-maps">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"></polygon></svg>
+        Navigate in Google Maps
+    </a>
 
-    <div class="btn-row">
-        <button class="btn-secondary" onclick="prevStop()">⬅️ Previous</button>
-        <button class="btn-secondary btn-warn" onclick="skipStop()">⏭️ Skip</button>
-        <button class="btn-secondary btn-danger" onclick="deleteStop()">🗑️ Delete</button>
+    <button id="btn-next-action" class="btn-complete" onclick="completeStop()">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        <span>Complete & Next Stop</span>
+    </button>
+
+    <!-- Micro Navigation Controls -->
+    <div class="btn-trio">
+        <button class="btn-control" onclick="prevStop()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            Previous
+        </button>
+        <button class="btn-control" onclick="skipStop()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
+            Skip Stop
+        </button>
+        <button class="btn-control btn-control-danger" onclick="deleteStop()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            Delete
+        </button>
     </div>
 
-    <div class="control-deck">
-        <button class="btn-tool" onclick="openReoptMenu()">⚡ Re-Sync</button>
-        <button class="btn-tool" onclick="openAddModal()">➕ Add Stop</button>
-        <button class="btn-tool" onclick="openTimetableModal()">📋 Upcoming</button>
+    <!-- Secondary Utilities Dock -->
+    <div class="dock-bar">
+        <button class="btn-dock" onclick="openTimetableModal()">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+            Upcoming
+        </button>
+        <button class="btn-dock" onclick="openAddModal()">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add Stop
+        </button>
+        <button class="btn-dock" onclick="openReoptMenu()">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            Re-Sync
+        </button>
     </div>
 
-    <div id="reopt-modal" class="modal-overlay">
-        <div class="modal-sheet">
-            <h3 style="margin-top:0; color:#fff;">Reoptimization Options</h3>
-            <p style="color:#94a3b8; font-size:0.85rem; margin-bottom:14px;">Update remaining route from your physical location:</p>
+    <!-- Drawer: Re-Optimization Options -->
+    <div id="reopt-modal" class="drawer-overlay" onclick="closeReoptMenu()">
+        <div class="drawer-sheet" onclick="event.stopPropagation()">
+            <div class="drawer-handle"></div>
+            <h3 style="margin: 0 0 4px 0; font-size: 1.15rem; font-weight: 800;">GPS Telemetry Options</h3>
+            <p style="color: #94A3B8; font-size: 0.82rem; margin: 0 0 16px 0;">Recalculate remaining legs using current vehicle position:</p>
             
-            <button class="modal-opt-btn" onclick="executeSyncOnly()">
-                <strong>➔ Update Route (Sync Mileage)</strong>
-                <span>Preserve stop order; recalculate driving legs & countdown mileage</span>
+            <button class="drawer-btn-tile" onclick="executeSyncOnly()">
+                <strong>Update Countdown Mileage (Preserve Sequence)</strong>
+                <span>Recalculate live miles and arrival times without altering stop order</span>
             </button>
             
-            <button class="modal-opt-btn" onclick="executeFullReoptimize()">
-                <strong>🔀 Reoptimize Route</strong>
-                <span>Reorder remaining stops from current GPS for minimum mileage</span>
+            <button class="drawer-btn-tile" onclick="executeFullReoptimize()">
+                <strong>Full Route Re-Optimization</strong>
+                <span>Re-sequence uncompleted stops to minimize overall road distance</span>
             </button>
 
-            <button class="btn-secondary btn-danger" style="width:100%; padding:10px; margin-top:8px;" onclick="closeReoptMenu()">Cancel</button>
+            <button class="btn-maps" style="margin-top: 10px;" onclick="closeReoptMenu()">Close</button>
         </div>
     </div>
 
-    <div id="add-modal" class="modal-overlay">
-        <div class="modal-sheet">
-            <h3 style="margin-top:0; color:#fff;">Add Inspection Stop</h3>
-            <input type="text" id="modal-street" style="width:100%; padding:12px; margin-bottom:8px; border-radius:8px; background:#0b132b; color:#fff; border:1px solid #475569;" placeholder="Street Address">
-            <div style="display:grid; grid-template-columns: 2fr 1fr 1fr; gap:6px; margin-bottom:8px;">
-                <input type="text" id="modal-city" style="padding:10px; border-radius:8px; background:#0b132b; color:#fff; border:1px solid #475569;" placeholder="City">
-                <input type="text" id="modal-state" style="padding:10px; border-radius:8px; background:#0b132b; color:#fff; border:1px solid #475569;" value="VA">
-                <input type="text" id="modal-zip" style="padding:10px; border-radius:8px; background:#0b132b; color:#fff; border:1px solid #475569;" placeholder="Zip">
-            </div>
-            <input type="text" id="modal-order" style="width:100%; padding:12px; margin-bottom:12px; border-radius:8px; background:#0b132b; color:#fff; border:1px solid #475569;" placeholder="Work Order #">
+    <!-- Drawer: Add Stop -->
+    <div id="add-modal" class="drawer-overlay" onclick="closeAddModal()">
+        <div class="drawer-sheet" onclick="event.stopPropagation()">
+            <div class="drawer-handle"></div>
+            <h3 style="margin: 0 0 12px 0; font-size: 1.15rem; font-weight: 800;">Add Inspection Stop</h3>
             
-            <button id="modal-submit-btn" class="btn-next" style="padding:14px; font-size:1.05rem;" onclick="confirmAddStop()">Add Stop & Geocode</button>
-            <button class="btn-secondary btn-danger" style="width:100%; padding:10px; margin-top:8px;" onclick="closeAddModal()">Cancel</button>
+            <input type="text" id="modal-street" class="modal-input" placeholder="Street Address (e.g. 100 Main St)">
+            <div style="display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 6px; margin-bottom: 8px;">
+                <input type="text" id="modal-city" class="modal-input" placeholder="City">
+                <input type="text" id="modal-state" class="modal-input" value="VA">
+                <input type="text" id="modal-zip" class="modal-input" placeholder="Zip">
+            </div>
+            <input type="text" id="modal-order" class="modal-input" placeholder="Work Order #">
+            
+            <button id="modal-submit-btn" class="btn-complete" style="margin-top: 6px;" onclick="confirmAddStop()">
+                <span>Geocode & Add Stop</span>
+            </button>
+            <button class="btn-maps" onclick="closeAddModal()">Cancel</button>
         </div>
     </div>
 
-    <div id="timetable-modal" class="modal-overlay">
-        <div class="modal-sheet" style="max-height: 80vh; display: flex; flex-direction: column;">
-            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; padding-bottom: 10px; margin-bottom: 10px;">
-                <div>
-                    <h3 style="margin: 0; color: #fff; font-size: 1.1rem;">Upcoming Stops</h3>
-                    <span id="modal-route-summary" style="font-size: 0.78rem; color: #94a3b8;">--</span>
-                </div>
-                <button class="btn-secondary" style="padding: 6px 12px; margin: 0;" onclick="closeTimetableModal()">✕ Close</button>
+    <!-- Drawer: Upcoming Stops Timetable -->
+    <div id="timetable-modal" class="drawer-overlay" onclick="closeTimetableModal()">
+        <div class="drawer-sheet" onclick="event.stopPropagation()" style="max-height: 80vh;">
+            <div class="drawer-handle"></div>
+            <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px;">
+                <h3 style="margin: 0; font-size: 1.15rem; font-weight: 800;">Remaining Route</h3>
+                <span id="modal-route-summary" style="font-size: 0.78rem; font-weight: 700; color: #38BDF8;">--</span>
             </div>
-            
-            <div id="timetable-list" style="overflow-y: auto; flex: 1; padding-right: 4px;"></div>
+            <div id="timetable-list" style="display: flex; flex-direction: column; gap: 8px;"></div>
+            <button class="btn-maps" style="margin-top: 14px;" onclick="closeTimetableModal()">Close</button>
         </div>
     </div>
 
@@ -1579,7 +1774,7 @@ if not master_df.empty:
             const toast = document.getElementById("toast");
             toast.innerText = msg;
             toast.className = "show";
-            setTimeout(function() {{ toast.className = toast.className.replace("show", ""); }}, 2200);
+            setTimeout(function() {{ toast.className = ""; }}, 2200);
         }}
 
         function autoSave() {{
@@ -1601,6 +1796,7 @@ if not master_df.empty:
             document.getElementById("hud-done").innerText = completedCount;
             document.getElementById("hud-left").innerText = inspsLeft;
 
+            // Direct Countdown Mileage & Honest Time Math
             let remainingMiles = 0.0;
             let totalRemainingDrivingMinutes = 0;
             for (let i = curIdx; i < stops.length; i++) {{
@@ -1614,22 +1810,24 @@ if not master_df.empty:
             let finishDate = new Date(Date.now() + (totalRemainingMinutes * 60000));
             document.getElementById("hud-finish").innerText = formatClock(finishDate);
 
+            // Active Card Visual State
             if (s.is_depot) {{
-                document.getElementById("disp-badge").className = "card-badge badge-depot";
-                document.getElementById("disp-badge").innerText = s.is_finish_leg ? "🏁 RETURN TO BASE" : "DEPARTURE BASE";
+                document.getElementById("disp-badge").className = "status-pill pill-depot";
+                document.getElementById("disp-badge").innerText = s.is_finish_leg ? "RETURN TO BASE" : "DEPARTURE BASE";
             }} else {{
                 let activeInsps = stops.filter(function(st) {{ return !st.is_depot && st.status !== "deleted"; }});
                 let totalActive = activeInsps.length > 0 ? activeInsps.length : totalInspectionsCount;
                 let currentNum = stops.slice(0, curIdx + 1).filter(function(st) {{ return !st.is_depot && st.status !== "deleted"; }}).length;
-                document.getElementById("disp-badge").className = "card-badge badge-inspection";
+                document.getElementById("disp-badge").className = "status-pill pill-inspection";
                 document.getElementById("disp-badge").innerText = "INSPECTION #" + currentNum + " OF " + totalActive;
             }}
 
             document.getElementById("disp-addr").innerText = s.street || "Property Address";
             let cityLine = [s.city, s.state, s.zip].filter(Boolean).join(", ");
-            document.getElementById("disp-city").innerText = cityLine ? ("📍 " + cityLine) : "📍";
+            document.getElementById("disp-city-text").innerText = cityLine || "Unassigned Region";
             document.getElementById("disp-order").innerText = s.order_num || "N/A";
-            
+            document.getElementById("disp-leg-dist").innerText = (s.leg_miles ? parseFloat(s.leg_miles).toFixed(1) : "0.0") + " mi";
+
             let legMinutes = Math.max(2, Math.round(parseFloat(s.leg_miles || 0.0) * 2.5));
             let stopArrivalDate = new Date(Date.now() + (legMinutes * 60000));
             document.getElementById("disp-planned-arrival").innerText = formatClock(stopArrivalDate);
@@ -1639,11 +1837,11 @@ if not master_df.empty:
 
             const btnNext = document.getElementById("btn-next-action");
             if (curIdx === stops.length - 2 && stops[stops.length - 1].is_depot) {{
-                btnNext.innerText = "Finish & Return to Base 🏁";
+                btnNext.querySelector("span").innerText = "Finish & Return to Base";
             }} else if (curIdx >= stops.length - 1) {{
-                btnNext.innerText = "Route Complete ✅";
+                btnNext.querySelector("span").innerText = "Route Completed";
             }} else {{
-                btnNext.innerText = "Next Stop (Complete) ⏩";
+                btnNext.querySelector("span").innerText = "Complete & Next Stop";
             }}
 
             autoSave();
@@ -1654,7 +1852,7 @@ if not master_df.empty:
                 stops[curIdx].status = "completed";
                 curIdx++;
                 updateDeck();
-                showToast("✅ Stop Completed!");
+                showToast("Stop Completed");
             }}
         }}
 
@@ -1663,17 +1861,17 @@ if not master_df.empty:
                 stops[curIdx].status = "skipped";
                 curIdx++;
                 updateDeck();
-                showToast("⏭️ Stop Skipped");
+                showToast("Stop Skipped");
             }}
         }}
 
         function deleteStop() {{
-            if (confirm("Delete stop from active route?")) {{
+            if (confirm("Remove this stop from today's active route?")) {{
                 stops[curIdx].status = "deleted";
                 stops.splice(curIdx, 1);
                 if (curIdx >= stops.length) curIdx = Math.max(0, stops.length - 1);
                 updateDeck();
-                showToast("🗑️ Stop Deleted");
+                showToast("Stop Removed");
             }}
         }}
 
@@ -1685,12 +1883,8 @@ if not master_df.empty:
             }}
         }}
 
-        function openReoptMenu() {{
-            document.getElementById("reopt-modal").style.display = "block";
-        }}
-        function closeReoptMenu() {{
-            document.getElementById("reopt-modal").style.display = "none";
-        }}
+        function openReoptMenu() {{ document.getElementById("reopt-modal").style.display = "block"; }}
+        function closeReoptMenu() {{ document.getElementById("reopt-modal").style.display = "none"; }}
 
         function openAddModal() {{
             document.getElementById("modal-street").value = "";
@@ -1700,10 +1894,7 @@ if not master_df.empty:
             document.getElementById("modal-order").value = "";
             document.getElementById("add-modal").style.display = "block";
         }}
-
-        function closeAddModal() {{
-            document.getElementById("add-modal").style.display = "none";
-        }}
+        function closeAddModal() {{ document.getElementById("add-modal").style.display = "none"; }}
 
         function confirmAddStop() {{
             const street = document.getElementById("modal-street").value.trim();
@@ -1713,12 +1904,12 @@ if not master_df.empty:
             const order = document.getElementById("modal-order").value.trim();
 
             if (!street) {{
-                alert("Please enter a street address");
+                alert("Please enter a street address.");
                 return;
             }}
 
             const submitBtn = document.getElementById("modal-submit-btn");
-            submitBtn.innerText = "Geocoding Address...";
+            submitBtn.querySelector("span").innerText = "Geocoding Address...";
 
             let tokens = [street, city, state, zip].filter(Boolean);
             const fullDest = tokens.join(", ");
@@ -1730,24 +1921,22 @@ if not master_df.empty:
                     let lon = (data && data.length > 0) ? parseFloat(data[0].lon) : 0.0;
                     finishAddStop(street, city, state, zip, fullDest, order, lat, lon);
                 }})
-                .catch(e => {{
-                    finishAddStop(street, city, state, zip, fullDest, order, 0.0, 0.0);
-                }});
+                .catch(e => finishAddStop(street, city, state, zip, fullDest, order, 0.0, 0.0));
         }}
 
         function finishAddStop(street, city, state, zip, fullDest, order, lat, lon) {{
-            document.getElementById("modal-submit-btn").innerText = "Add Stop & Geocode";
+            document.getElementById("modal-submit-btn").querySelector("span").innerText = "Geocode & Add Stop";
 
             const newStop = {{
                 row_idx: stops.length,
                 stop_num: stops.length,
-                insp_id: order || "ADDED-STOP",
+                insp_id: order || "ADDED",
                 street: street,
                 city: city,
                 state: state,
                 zip: zip,
                 full_dest: fullDest,
-                order_num: order || "ADDED-STOP",
+                order_num: order || "ADDED",
                 planned_arrival: "--:--",
                 cum_miles: 0,
                 leg_miles: 4.0,
@@ -1767,21 +1956,18 @@ if not master_df.empty:
 
             closeAddModal();
             updateDeck();
-            showToast("➕ Stop Added!");
+            showToast("Stop Added");
         }}
 
         function openTimetableModal() {{
             const listContainer = document.getElementById("timetable-list");
             listContainer.innerHTML = "";
 
-            let remainingStops = stops.slice(curIdx).filter(function(st) {{
-                return st.status !== "deleted";
-            }});
-
+            let remainingStops = stops.slice(curIdx).filter(st => st.status !== "deleted");
             let cumulativeMins = 0;
-            let activeRemainingCount = remainingStops.filter(function(st) {{ return !st.is_depot; }}).length;
+            let activeRemainingCount = remainingStops.filter(st => !st.is_depot).length;
 
-            remainingStops.forEach(function(s, offset) {{
+            remainingStops.forEach((s, offset) => {{
                 let actualIndex = curIdx + offset;
                 let isCurrent = (offset === 0);
                 
@@ -1793,25 +1979,24 @@ if not master_df.empty:
                 let arrivalStr = formatClock(stopEst);
 
                 let item = document.createElement("div");
-                item.style.backgroundColor = isCurrent ? "#1e293b" : "#0f172a";
-                item.style.border = isCurrent ? "1px solid #38bdf8" : "1px solid #1e293b";
-                item.style.borderLeft = isCurrent ? "4px solid #38bdf8" : (s.is_depot ? "4px solid #64748b" : "4px solid #2563eb");
-                item.style.borderRadius = "8px";
-                item.style.padding = "10px";
-                item.style.marginBottom = "8px";
+                item.style.backgroundColor = isCurrent ? "#1E293B" : "#131C2E";
+                item.style.border = isCurrent ? "1px solid #38BDF8" : "1px solid #1E293B";
+                item.style.borderLeft = isCurrent ? "4px solid #38BDF8" : (s.is_depot ? "4px solid #64748B" : "4px solid #2563EB");
+                item.style.borderRadius = "10px";
+                item.style.padding = "10px 12px";
                 item.style.cursor = "pointer";
 
                 let badgeLabel = s.is_depot ? (s.is_finish_leg ? "RETURN BASE" : "DEPOT") : ("STOP #" + (s.stop_num - 1));
                 let orderLabel = s.order_num ? ("ID: " + s.order_num) : "";
 
                 item.innerHTML = `
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                        <span style="font-size: 0.72rem; font-weight: 800; color: ${{isCurrent ? '#38bdf8' : '#94a3b8'}};">${{badgeLabel}} ${{isCurrent ? '• ACTIVE' : ''}}</span>
-                        <span style="font-size: 0.85rem; font-weight: 800; color: #fbbf24;">${{arrivalStr}}</span>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                        <span style="font-size: 0.68rem; font-weight: 800; color: ${{isCurrent ? '#38BDF8' : '#64748B'}};">${{badgeLabel}} ${{isCurrent ? '• ACTIVE' : ''}}</span>
+                        <span style="font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; font-weight: 700; color: #A78BFA;">${{arrivalStr}}</span>
                     </div>
-                    <div style="font-size: 0.95rem; font-weight: 700; color: #f1f5f9; text-transform: uppercase;">${{s.street || 'Property Address'}}</div>
-                    <div style="font-size: 0.78rem; color: #94a3b8;">${{[s.city, s.state, s.zip].filter(Boolean).join(", ")}}</div>
-                    ${{orderLabel ? `<div style="font-size: 0.72rem; color: #60a5fa; margin-top: 4px; font-weight: 600;">${{orderLabel}}</div>` : ''}}
+                    <div style="font-size: 0.95rem; font-weight: 700; color: #F8FAFC;">${{s.street || 'Property Address'}}</div>
+                    <div style="font-size: 0.76rem; color: #94A3B8;">${{[s.city, s.state, s.zip].filter(Boolean).join(", ")}}</div>
+                    ${{orderLabel ? `<div style="font-family: 'JetBrains Mono', monospace; font-size: 0.70rem; color: #38BDF8; margin-top: 3px;">${{orderLabel}}</div>` : ''}}
                 `;
 
                 item.onclick = function() {{
@@ -1827,16 +2012,14 @@ if not master_df.empty:
             document.getElementById("timetable-modal").style.display = "block";
         }}
 
-        function closeTimetableModal() {{
-            document.getElementById("timetable-modal").style.display = "none";
-        }}
+        function closeTimetableModal() {{ document.getElementById("timetable-modal").style.display = "none"; }}
 
         function executeSyncOnly() {{
             closeReoptMenu();
-            showToast("⚡ Updating remaining mileage from GPS...");
+            showToast("Updating Live Range...");
 
             if (!liveCoords || !liveCoords.lat) {{
-                showToast("Using planned distances (Waiting for GPS lock)");
+                showToast("Using Planned Distances");
                 return;
             }}
 
@@ -1855,7 +2038,7 @@ if not master_df.empty:
                             let legMeters = data.routes[0].legs[0].distance;
                             stops[curIdx].leg_miles = Math.round((legMeters * 0.000621371) * 10) / 10;
                             updateDeck();
-                            showToast("⚡ Mileage Synced!");
+                            showToast("Mileage Synced");
                         }}
                     }})
                     .catch(e => updateDeck());
@@ -1865,11 +2048,11 @@ if not master_df.empty:
         function executeFullReoptimize() {{
             closeReoptMenu();
             if (curIdx >= stops.length - 2) {{
-                showToast("Route already optimal!");
+                showToast("Route Already Optimal");
                 return;
             }}
 
-            showToast("🔀 Solving road matrix...");
+            showToast("Optimizing Road Path...");
 
             let startLat = (liveCoords && liveCoords.lat) ? liveCoords.lat : stops[curIdx].lat;
             let startLon = (liveCoords && liveCoords.lon) ? liveCoords.lon : stops[curIdx].lon;
@@ -1909,7 +2092,7 @@ if not master_df.empty:
                         if (depotStop) optimized.push(depotStop);
                         stops = stops.concat(optimized);
                         updateDeck();
-                        showToast("🔀 Route reordered for shortest drive!");
+                        showToast("Shortest Path Applied");
                     }} else {{
                         if (depotStop) remaining.push(depotStop);
                         stops = stops.concat(remaining);
