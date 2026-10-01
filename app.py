@@ -144,7 +144,7 @@ def geocode_single_nominatim(address, cache):
     if arc_coords:
         return arc_coords
 
-    geolocator = Nominatim(user_agent="cfs_field_geocoder_us_v37")
+    geolocator = Nominatim(user_agent="cfs_field_geocoder_us_v38")
     try:
         clean_addr = strip_unit_designation(address)
         location = geolocator.geocode(
@@ -511,7 +511,7 @@ def persist_stops(df):
 def search_address(query):
     if not query or len(query.strip()) < 3:
         return []
-    geolocator = Nominatim(user_agent="cfs_field_geocoder_us_v37")
+    geolocator = Nominatim(user_agent="cfs_field_geocoder_us_v38")
     try:
         locations = geolocator.geocode(
             query,
@@ -736,7 +736,7 @@ if not master_df.empty:
     if not valid_master_df.empty and len(coords) > 1:
         dist_matrix, dur_matrix = build_road_distance_matrix_cached(coords)
 
-        # Desktop Optimization Form (Fixed Robust Matching)
+        # Desktop Optimization Form (Defensive Parsing Guard)
         st.markdown(f"### ⚡ Route Direction & Optimization ({inspector_profile})")
         stop_options = ["-- Auto-Pick Closest Stop --"] + [
             f"#{i+1}: {r['Inspection ID']} ({str(r['Address'])[:22]}...)"
@@ -1448,6 +1448,29 @@ if not master_df.empty:
                 const s = stops[curIdx];
                 s.status = "completed";
 
+                // 1. Dynamic Departure Snap on Stop #1 (e.g. 6:30 AM vs planned 8:00 AM)
+                let isFirstInspection = (curIdx === 1 || (curIdx === 0 && !s.is_depot));
+                if (isFirstInspection && s.planned_arrival && s.planned_arrival !== "--:--") {{
+                    try {{
+                        let match = s.planned_arrival.match(/(\d+):(\d+)\s*(AM|PM)/i);
+                        if (match) {{
+                            let pDate = new Date();
+                            let pHours = parseInt(match[1], 10);
+                            let pMins = parseInt(match[2], 10);
+                            let pAmpm = match[3].toUpperCase();
+                            if (pAmpm === "PM" && pHours < 12) pHours += 12;
+                            if (pAmpm === "AM" && pHours === 12) pHours = 0;
+                            pDate.setHours(pHours, pMins, 0, 0);
+
+                            let startDeltaMinutes = (pDate.getTime() - Date.now()) / 60000.0;
+                            if (startDeltaMinutes > 10.0) {{
+                                bankedMinutes += startDeltaMinutes;
+                            }}
+                        }}
+                    }} catch(e) {{}}
+                }}
+
+                // 2. Normal On-Site Dwell Absorption (5-minute allocation)
                 if (s.arrived_at && !s.is_depot) {{
                     let elapsedMin = (Date.now() - s.arrived_at) / 60000.0;
                     let delta = 5.0 - elapsedMin;
@@ -1465,7 +1488,7 @@ if not master_df.empty:
                 stops[curIdx].status = "skipped";
                 curIdx++;
                 updateDeck();
-                showToast("⏭️️ Stop Skipped");
+                showToast("⏭️ Stop Skipped");
             }}
         }}
 
