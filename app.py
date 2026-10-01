@@ -478,7 +478,7 @@ def persist_stops(df):
 def search_address(query):
     if not query or len(query.strip()) < 3:
         return []
-    geolocator = Nominatim(user_agent="cfs_address_search_bar_v30")
+    geolocator = Nominatim(user_agent="cfs_field_app_geocoder_v30")
     try:
         locations = geolocator.geocode(query, exactly_one=False, limit=6)
         if locations:
@@ -491,7 +491,7 @@ def search_address(query):
 st.sidebar.markdown("### 🔀 Display View")
 view_mode = st.sidebar.radio(
     "Choose Interface Mode:",
-    ["🖥️️ Desktop Planner", "📱 Mobile Driver Deck"],
+    ["🖥️ Desktop Planner", "📱 Mobile Driver Deck"],
     index=0,
 )
 
@@ -1213,7 +1213,7 @@ if not master_df.empty:
     <div class="control-deck">
         <button class="btn-tool" onclick="openReoptMenu()">⚡ Re-Sync Options</button>
         <button class="btn-tool" onclick="resetBankedTime()">⏱️ Reset Delta</button>
-        <button class="btn-tool" onclick="alert('Manifest is locked to solved timetable.')">📋 Info</button>
+        <button class="btn-tool" onclick="openTimetableModal()">📋 Upcoming Stops</button>
     </div>
 
     <!-- Circuit Action Split Modal -->
@@ -1233,6 +1233,23 @@ if not master_df.empty:
             </button>
 
             <button class="btn-secondary btn-danger" style="width:100%; padding:10px; margin-top:8px;" onclick="closeReoptMenu()">Cancel</button>
+        </div>
+    </div>
+
+    <!-- Upcoming Stops Modal (Circuit-Style Itinerary List) -->
+    <div id="timetable-modal" class="modal-overlay">
+        <div class="modal-sheet" style="max-height: 80vh; display: flex; flex-direction: column;">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; padding-bottom: 10px; margin-bottom: 10px;">
+                <div>
+                    <h3 style="margin: 0; color: #fff; font-size: 1.1rem;">Upcoming Stops</h3>
+                    <span id="modal-route-summary" style="font-size: 0.78rem; color: #94a3b8;">--</span>
+                </div>
+                <button class="btn-secondary" style="padding: 6px 12px; margin: 0;" onclick="closeTimetableModal()">✕ Close</button>
+            </div>
+            
+            <div id="timetable-list" style="overflow-y: auto; flex: 1; padding-right: 4px;">
+                <!-- Dynamically generated stop cards render here -->
+            </div>
         </div>
     </div>
 
@@ -1348,7 +1365,6 @@ if not master_df.empty:
 
             document.getElementById("hud-left").innerText = inspsLeft;
 
-            // Driven miles sum strictly completed legs
             let drivenMiles = 0.0;
             for (let i = 0; i < curIdx; i++) {{
                 if (stops[i].status === "completed") {{
@@ -1358,7 +1374,6 @@ if not master_df.empty:
             document.getElementById("hud-driven").innerText = Math.round(drivenMiles) + " mi";
             document.getElementById("hud-to-office").innerText = Math.round(MASTER_TOTAL_MILES) + " mi";
 
-            // Office ETA adjusts exclusively through the Delta Engine
             let dynamicFinish = applyDeltaToTimeString(baselineFinishStr, bankedMinutes);
             document.getElementById("hud-finish").innerText = dynamicFinish;
 
@@ -1370,7 +1385,6 @@ if not master_df.empty:
             let plannedArrivalAdjusted = applyDeltaToTimeString(s.planned_arrival, bankedMinutes);
             document.getElementById("disp-planned-arrival").innerText = plannedArrivalAdjusted;
 
-            // Absolute unambiguous Google Maps link (City and State locked)
             let verifiedNavTokens = [s.street, s.city || "Front Royal", s.state || "VA", s.zip].filter(Boolean);
             let verifiedAddress = verifiedNavTokens.join(", ");
             document.getElementById("nav-link").href = "https://www.google.com/maps/dir/?api=1&destination=" + encodeURIComponent(verifiedAddress) + "&travelmode=driving";
@@ -1434,7 +1448,7 @@ if not master_df.empty:
         function resetBankedTime() {{
             bankedMinutes = 0.0;
             updateDeck();
-            showToast("⏱️ Delta buffer reset to zero");
+            showToast("⏱️️ Delta buffer reset to zero");
         }}
 
         function openReoptMenu() {{
@@ -1442,6 +1456,62 @@ if not master_df.empty:
         }}
         function closeReoptMenu() {{
             document.getElementById("reopt-modal").style.display = "none";
+        }}
+
+        function openTimetableModal() {{
+            const listContainer = document.getElementById("timetable-list");
+            listContainer.innerHTML = "";
+
+            let remainingStops = stops.slice(curIdx).filter(function(st) {{
+                return st.status !== "deleted";
+            }});
+
+            let dynamicFinish = applyDeltaToTimeString(baselineFinishStr, bankedMinutes);
+            let activeRemainingCount = remainingStops.filter(function(st) {{ return !st.is_depot; }}).length;
+            document.getElementById("modal-route-summary").innerText = 
+                "Finish: " + dynamicFinish + " · " + activeRemainingCount + " stops left";
+
+            remainingStops.forEach(function(s, offset) {{
+                let actualIndex = curIdx + offset;
+                let isCurrent = (offset === 0);
+                let adjustedArrival = applyDeltaToTimeString(s.planned_arrival, bankedMinutes);
+
+                let item = document.createElement("div");
+                item.style.backgroundColor = isCurrent ? "#1e293b" : "#0f172a";
+                item.style.border = isCurrent ? "1px solid #38bdf8" : "1px solid #1e293b";
+                item.style.borderLeft = isCurrent ? "4px solid #38bdf8" : (s.is_depot ? "4px solid #64748b" : "4px solid #2563eb");
+                item.style.borderRadius = "8px";
+                item.style.padding = "10px";
+                item.style.marginBottom = "8px";
+                item.style.cursor = "pointer";
+
+                let badgeLabel = s.is_depot ? (s.is_finish_leg ? "RETURN BASE" : "DEPOT") : ("STOP #" + (s.stop_num - 1));
+                let orderLabel = s.order_num ? ("ID: " + s.order_num) : "";
+
+                item.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                        <span style="font-size: 0.72rem; font-weight: 800; color: ${{isCurrent ? '#38bdf8' : '#94a3b8'}};">${{badgeLabel}} ${{isCurrent ? '• ACTIVE' : ''}}</span>
+                        <span style="font-size: 0.85rem; font-weight: 800; color: #fbbf24;">${{adjustedArrival}}</span>
+                    </div>
+                    <div style="font-size: 0.95rem; font-weight: 700; color: #f1f5f9; text-transform: uppercase;">${{s.street || 'Property Address'}}</div>
+                    <div style="font-size: 0.78rem; color: #94a3b8;">${{[s.city, s.state, s.zip].filter(Boolean).join(", ")}}</div>
+                    ${{orderLabel ? `<div style="font-size: 0.72rem; color: #60a5fa; margin-top: 4px; font-weight: 600;">${{orderLabel}}</div>` : ''}}
+                `;
+
+                item.onclick = function() {{
+                    curIdx = actualIndex;
+                    closeTimetableModal();
+                    updateDeck();
+                }};
+
+                listContainer.appendChild(item);
+            }});
+
+            document.getElementById("timetable-modal").style.display = "block";
+        }}
+
+        function closeTimetableModal() {{
+            document.getElementById("timetable-modal").style.display = "none";
         }}
 
         function executeSyncOnly() {{
