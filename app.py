@@ -144,7 +144,7 @@ def geocode_single_nominatim(address, cache):
     if arc_coords:
         return arc_coords
 
-    geolocator = Nominatim(user_agent="cfs_field_geocoder_us_v36")
+    geolocator = Nominatim(user_agent="cfs_field_geocoder_us_v37")
     try:
         clean_addr = strip_unit_designation(address)
         location = geolocator.geocode(
@@ -511,7 +511,7 @@ def persist_stops(df):
 def search_address(query):
     if not query or len(query.strip()) < 3:
         return []
-    geolocator = Nominatim(user_agent="cfs_field_geocoder_us_v36")
+    geolocator = Nominatim(user_agent="cfs_field_geocoder_us_v37")
     try:
         locations = geolocator.geocode(
             query,
@@ -537,7 +537,7 @@ view_mode = st.sidebar.radio(
 )
 
 st.sidebar.markdown("---")
-st.sidebar.header("⚙️️ Route Settings")
+st.sidebar.header("⚙️ Route Settings")
 
 start_input = st.sidebar.text_input("Starting Address / Base:", "2644 S Shirlington Rd, Arlington, VA")
 start_suggestions = search_address(start_input)
@@ -736,7 +736,7 @@ if not master_df.empty:
     if not valid_master_df.empty and len(coords) > 1:
         dist_matrix, dur_matrix = build_road_distance_matrix_cached(coords)
 
-        # Desktop Optimization Form
+        # Desktop Optimization Form (Fixed Robust Matching)
         st.markdown(f"### ⚡ Route Direction & Optimization ({inspector_profile})")
         stop_options = ["-- Auto-Pick Closest Stop --"] + [
             f"#{i+1}: {r['Inspection ID']} ({str(r['Address'])[:22]}...)"
@@ -758,13 +758,19 @@ if not master_df.empty:
             if btn_do_optimize:
                 first_row_id = None
                 if selected_first_opt != "-- Auto-Pick Closest Stop --":
-                    raw_first_idx = int(selected_first_opt.split(":")[0].replace("#", "")) - 1
-                    first_row_id = valid_master_df.iloc[raw_first_idx]["Inspection ID"]
+                    try:
+                        raw_idx = int(re.match(r"#(\d+):", selected_first_opt).group(1)) - 1
+                        first_row_id = valid_master_df.iloc[raw_idx]["Inspection ID"]
+                    except Exception:
+                        pass
 
                 last_row_id = None
                 if selected_last_opt != "-- Auto-Pick Closest Stop --":
-                    raw_first_idx = int(selected_last_opt.split(":")[0].replace("#", "")) - 1
-                    last_row_id = valid_master_df.iloc[raw_last_idx]["Inspection ID"]
+                    try:
+                        raw_idx = int(re.match(r"#(\d+):", selected_last_opt).group(1)) - 1
+                        last_row_id = valid_master_df.iloc[raw_idx]["Inspection ID"]
+                    except Exception:
+                        pass
 
                 if first_row_id is not None:
                     match_first = valid_master_df[valid_master_df["Inspection ID"] == first_row_id]
@@ -1459,7 +1465,7 @@ if not master_df.empty:
                 stops[curIdx].status = "skipped";
                 curIdx++;
                 updateDeck();
-                showToast("⏭️ Stop Skipped");
+                showToast("⏭️️ Stop Skipped");
             }}
         }}
 
