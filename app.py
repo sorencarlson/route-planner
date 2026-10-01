@@ -17,7 +17,6 @@ import streamlit.components.v1 as components
 # 1. CORE ENGINE & GEOCODING CACHE
 # =========================================================================
 CACHE_FILE = "address_cache.json"
-PERSISTENT_FILE = "current_active_route.csv"
 SAVED_DIR = os.path.abspath("saved_routes")
 os.makedirs(SAVED_DIR, exist_ok=True)
 
@@ -47,7 +46,7 @@ def parse_lat_lon_string(text):
         try:
             lat = float(match.group(1))
             lon = float(match.group(2))
-            if -90 <= lat <= 90 and -180 <= lon <= 180:
+            if 36.0 <= lat <= 40.5 and -80.0 <= lon <= -75.0:
                 return [lat, lon]
         except Exception:
             pass
@@ -55,7 +54,8 @@ def parse_lat_lon_string(text):
 
 
 def strip_unit_designation(address):
-    addr_clean = re.sub(r"#\s*[\w-]+", "", str(address))
+    addr_clean = re.sub(r"/\s*\d+", "", str(address))
+    addr_clean = re.sub(r"#\s*[\w-]+", "", addr_clean)
     addr_clean = re.sub(r"(?i)\bN\s+W\b", "NW", addr_clean)
     addr_clean = re.sub(r"(?i)\bN\s+E\b", "NE", addr_clean)
     addr_clean = re.sub(r"(?i)\bS\s+W\b", "SW", addr_clean)
@@ -64,13 +64,17 @@ def strip_unit_designation(address):
     unit_pattern = r"(?i)\b(apt|apartment|unit|ste|suite|bldg|building|fl|floor|dept|lot|rm|room|bsmt|basement|spc|space|trailer)\.?\s*[\w#-]+"
     addr_clean = re.sub(unit_pattern, "", addr_clean)
     addr_clean = re.sub(r",\s*,", ",", addr_clean)
-    addr_clean = re.sub(r"\s{2,}", " ", addr_clean).strip(" ,")
+    addr_clean = re.sub(r"\s{2,}", " ", addr_clean).strip(" ,/")
     return addr_clean
 
 
 def suggest_address_cleanup(raw_address):
     cleaned = str(raw_address).strip()
     reasons = []
+
+    if "/" in cleaned:
+        cleaned = re.sub(r"/\s*\d+", "", cleaned).strip(" /")
+        reasons.append("Stripped appended Work Order / ID number")
 
     cleaned_spaced = re.sub(r"(?i)\bN\s+W\b", "NW", cleaned)
     cleaned_spaced = re.sub(r"(?i)\bN\s+E\b", "NE", cleaned_spaced)
@@ -85,19 +89,9 @@ def suggest_address_cleanup(raw_address):
         cleaned = cleaned_quad_unit
         reasons.append("Stripped bare unit number after directional")
 
-    if re.search(r"(?i)\bstree\b(?!\w)", cleaned):
-        cleaned = re.sub(r"(?i)\bstree\b", "Street", cleaned)
-        reasons.append("Fixed typo 'STREE' -> 'Street'")
-
-    if re.search(r"(?i)\bdrve\b(?!\w)", cleaned):
-        cleaned = re.sub(r"(?i)\bdrve\b", "Drive", cleaned)
-        reasons.append("Fixed typo 'DRVE' -> 'Drive'")
-
     cleaned_unit = strip_unit_designation(cleaned)
     if cleaned_unit != cleaned:
-        reasons.append(
-            "Parsed base street address without unit/apartment number"
-        )
+        reasons.append("Parsed base street address without unit/apartment number")
 
     return cleaned, reasons
 
@@ -113,8 +107,11 @@ def geocode_arcgis(address, cache):
         return cache[address]
     try:
         clean_addr = strip_unit_designation(address)
+        if not re.search(r"(?i)\b(VA|MD|DC|USA|Virginia|Maryland)\b", clean_addr):
+            clean_addr = f"{clean_addr}, USA"
+
         encoded_query = urllib.parse.quote(clean_addr)
-        url = f"https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?f=json&singleLine={encoded_query}&maxLocations=1"
+        url = f"https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?f=json&singleLine={encoded_query}&maxLocations=1&sourceCountry=USA"
         res = requests.get(url, timeout=5)
         if res.status_code == 200:
             data = res.json()
@@ -123,10 +120,11 @@ def geocode_arcgis(address, cache):
                 loc = candidates[0].get("location", {})
                 lat = float(loc.get("y"))
                 lon = float(loc.get("x"))
-                coords = [lat, lon]
-                cache[address] = coords
-                save_cache(cache)
-                return coords
+                if 24.0 <= lat <= 50.0 and -125.0 <= lon <= -66.0:
+                    coords = [lat, lon]
+                    cache[address] = coords
+                    save_cache(cache)
+                    return coords
     except Exception:
         pass
     return None
@@ -146,14 +144,24 @@ def geocode_single_nominatim(address, cache):
     if arc_coords:
         return arc_coords
 
-    geolocator = Nominatim(user_agent="cfs_field_app_geocoder_v32")
+    geolocator = Nominatim(user_agent="cfs_field_geocoder_us_v36")
     try:
-        location = geolocator.geocode(address, addressdetails=True, timeout=6)
+        clean_addr = strip_unit_designation(address)
+        location = geolocator.geocode(
+            clean_addr,
+            country_codes="us",
+            viewbox=[(-83.7, 36.5), (-75.0, 40.0)],
+            bounded=False,
+            timeout=6,
+        )
         if location:
-            coords = [float(location.latitude), float(location.longitude)]
-            cache[address] = coords
-            save_cache(cache)
-            return coords
+            lat = float(location.latitude)
+            lon = float(location.longitude)
+            if 24.0 <= lat <= 50.0 and -125.0 <= lon <= -66.0:
+                coords = [lat, lon]
+                cache[address] = coords
+                save_cache(cache)
+                return coords
     except Exception:
         pass
     return None
@@ -167,9 +175,7 @@ def get_coordinates_and_failed_stops(stops_df, depot_address):
 
     depot_coords = geocode_single_nominatim(depot_address, cache)
     if depot_coords:
-        coords.append(
-            (depot_coords[0], depot_coords[1], depot_address, "DEPOT")
-        )
+        coords.append((depot_coords[0], depot_coords[1], depot_address, "DEPOT"))
     else:
         coords.append((38.8502, -77.0841, depot_address, "DEPOT"))
 
@@ -188,9 +194,7 @@ def get_coordinates_and_failed_stops(stops_df, depot_address):
             coords.append((lat, lon, addr, insp_id))
             valid_indices.append(idx)
         else:
-            failed_stops.append(
-                {"Index": idx, "Inspection ID": insp_id, "Address": addr}
-            )
+            failed_stops.append({"Index": idx, "Inspection ID": insp_id, "Address": addr})
 
     save_cache(cache)
     return coords, valid_indices, failed_stops
@@ -209,12 +213,8 @@ def build_road_distance_matrix_cached(coords):
         if res.status_code == 200:
             data = res.json()
             if data.get("code") == "Ok":
-                dist_matrix = [
-                    [int(val) for val in row] for row in data["distances"]
-                ]
-                dur_matrix = [
-                    [int(val) for val in row] for row in data["durations"]
-                ]
+                dist_matrix = [[int(val) for val in row] for row in data["distances"]]
+                dur_matrix = [[int(val) for val in row] for row in data["durations"]]
                 return dist_matrix, dur_matrix
     except Exception:
         pass
@@ -288,14 +288,8 @@ def optimize_stops_sequence(distance_matrix, lock_first=False, lock_last=False):
                 prev_node = 0 if i == 0 else route[i - 1]
                 next_node = route[k + 1] if k + 1 < len(route) else 0
 
-                old_dist = (
-                    distance_matrix[prev_node][route[i]]
-                    + distance_matrix[route[k]][next_node]
-                )
-                new_dist = (
-                    distance_matrix[prev_node][route[k]]
-                    + distance_matrix[route[i]][next_node]
-                )
+                old_dist = distance_matrix[prev_node][route[i]] + distance_matrix[route[k]][next_node]
+                new_dist = distance_matrix[prev_node][route[k]] + distance_matrix[route[i]][next_node]
 
                 if new_dist < old_dist:
                     route[i : k + 1] = reversed(route[i : k + 1])
@@ -312,9 +306,7 @@ def generate_map(coords, routes, map_tile="OpenStreetMap"):
         return
     depot_lat, depot_lon = coords[0][0], coords[0][1]
 
-    route_map = folium.Map(
-        location=[depot_lat, depot_lon], zoom_start=10, tiles=map_tile
-    )
+    route_map = folium.Map(location=[depot_lat, depot_lon], zoom_start=10, tiles=map_tile)
     colors = ["red", "blue", "green", "purple", "orange", "darkred"]
 
     folium.Marker(
@@ -335,12 +327,7 @@ def generate_map(coords, routes, map_tile="OpenStreetMap"):
                 if prev_node < len(coords):
                     plat, plon, _, _ = coords[prev_node]
                     road_points = get_road_polyline_cached(plat, plon, lat, lon)
-                    folium.PolyLine(
-                        road_points,
-                        color=driver_color,
-                        weight=5,
-                        opacity=0.85,
-                    ).add_to(route_map)
+                    folium.PolyLine(road_points, color=driver_color, weight=5, opacity=0.85).add_to(route_map)
 
             if node_idx == 0:
                 continue
@@ -360,9 +347,7 @@ def generate_map(coords, routes, map_tile="OpenStreetMap"):
     route_map.save("route_map.html")
 
 
-def calculate_schedule(
-    coords, routes, dist_matrix, dur_matrix, start_time_obj, dwell_mins
-):
+def calculate_schedule(coords, routes, dist_matrix, dur_matrix, start_time_obj, dwell_mins):
     schedules = {}
     for driver_id, path in routes.items():
         current_time = datetime.combine(datetime.today(), start_time_obj)
@@ -390,9 +375,7 @@ def calculate_schedule(
                 )
             else:
                 prev_node = path[stop_idx - 1]
-                if prev_node < len(dist_matrix) and node_idx < len(
-                    dist_matrix[prev_node]
-                ):
+                if prev_node < len(dist_matrix) and node_idx < len(dist_matrix[prev_node]):
                     dist_meters = dist_matrix[prev_node][node_idx]
                     dur_seconds = dur_matrix[prev_node][node_idx]
                 else:
@@ -452,21 +435,12 @@ def export_waypoints_gpx(sched_df):
     for _, row in sched_df.iterrows():
         try:
             insp_id = str(row["Inspection ID"]).strip()
-            if (
-                not insp_id
-                or insp_id.lower() in ["depot", "nan"]
-                or insp_id in seen_ids
-            ):
+            if not insp_id or insp_id.lower() in ["depot", "nan"] or insp_id in seen_ids:
                 continue
             seen_ids.add(insp_id)
             lat = float(row["Latitude"])
             lon = float(row["Longitude"])
-            desc = (
-                str(row["Description"])
-                .replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-            )
+            desc = str(row["Description"]).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             gpx_xml.append(f'    <rtept lat="{lat}" lon="{lon}">')
             gpx_xml.append(f"      <name>{insp_id}</name>")
             gpx_xml.append(f"      <desc>{desc}</desc>")
@@ -485,27 +459,31 @@ def export_directions_txt(sched_df):
         "==========================================\n",
     ]
     for _, row in sched_df.iterrows():
-        insp_str = (
-            f" [ID: {row['Inspection ID']}]" if row["Inspection ID"] else ""
-        )
-        lines.append(
-            f"Stop {row['Stop Number']}{insp_str}: {row['Description']}"
-        )
-        lines.append(
-            f"  Arrival: {row['Arrival']}  |  Departure: {row['Departure']}"
-        )
+        insp_str = f" [ID: {row['Inspection ID']}]" if row["Inspection ID"] else ""
+        lines.append(f"Stop {row['Stop Number']}{insp_str}: {row['Description']}")
+        lines.append(f"  Arrival: {row['Arrival']}  |  Departure: {row['Departure']}")
         lines.append(f"  Total Distance: {row['Total Miles']} miles")
         lines.append("-" * 40)
     return "\n".join(lines)
 
 
 # =========================================================================
-# 2. STREAMLIT APP & UI
+# 2. STREAMLIT APP & MULTI-INSPECTOR ISOLATION
 # =========================================================================
 st.set_page_config(page_title="Route Planner & Mobile App", layout="wide")
 
-if "processed_uploads" not in st.session_state:
-    st.session_state["processed_uploads"] = set()
+st.sidebar.markdown("### 👤 Inspector Workspace")
+inspector_profile = st.sidebar.selectbox(
+    "Active Inspector:",
+    ["Soren", "Huny", "Driver 3", "Driver 4"],
+    index=0,
+    help="Each inspector has an isolated workspace so multiple people can route simultaneously."
+)
+inspector_slug = re.sub(r"\W+", "_", inspector_profile.strip().lower())
+PERSISTENT_FILE = f"active_route_{inspector_slug}.csv"
+
+if f"processed_uploads_{inspector_slug}" not in st.session_state:
+    st.session_state[f"processed_uploads_{inspector_slug}"] = set()
 
 
 def load_persisted_stops():
@@ -533,9 +511,16 @@ def persist_stops(df):
 def search_address(query):
     if not query or len(query.strip()) < 3:
         return []
-    geolocator = Nominatim(user_agent="cfs_field_app_geocoder_v32")
+    geolocator = Nominatim(user_agent="cfs_field_geocoder_us_v36")
     try:
-        locations = geolocator.geocode(query, exactly_one=False, limit=6)
+        locations = geolocator.geocode(
+            query,
+            country_codes="us",
+            viewbox=[(-83.7, 36.5), (-75.0, 40.0)],
+            bounded=False,
+            exactly_one=False,
+            limit=6,
+        )
         if locations:
             return [loc.address for loc in locations]
     except Exception:
@@ -543,6 +528,7 @@ def search_address(query):
     return []
 
 
+st.sidebar.markdown("---")
 st.sidebar.markdown("### 🔀 Display View")
 view_mode = st.sidebar.radio(
     "Choose Interface Mode:",
@@ -551,16 +537,12 @@ view_mode = st.sidebar.radio(
 )
 
 st.sidebar.markdown("---")
-st.sidebar.header("⚙️ Route Settings")
+st.sidebar.header("⚙️️ Route Settings")
 
-start_input = st.sidebar.text_input(
-    "Starting Address / Base:", "2644 S Shirlington Rd, Arlington, VA"
-)
+start_input = st.sidebar.text_input("Starting Address / Base:", "2644 S Shirlington Rd, Arlington, VA")
 start_suggestions = search_address(start_input)
 depot_address = (
-    st.sidebar.selectbox(
-        "Select Matched Start Address:", start_suggestions, index=0
-    )
+    st.sidebar.selectbox("Select Matched Start Address:", start_suggestions, index=0)
     if start_suggestions
     else start_input
 )
@@ -570,22 +552,19 @@ stop_duration = st.sidebar.number_input(
     "Inspection Time per Stop (mins):", min_value=1, max_value=120, value=5
 )
 
-# Recall Saved Route
+# Recall Saved Route (Filtered by Workspace)
 st.sidebar.markdown("---")
-st.sidebar.subheader("📂 Recall Saved Route")
-saved_route_files = sorted(
-    glob.glob(os.path.join(SAVED_DIR, "*.csv")),
+st.sidebar.subheader(f"📂 Recall Saved Route ({inspector_profile})")
+all_saved_files = glob.glob(os.path.join(SAVED_DIR, "*.csv"))
+inspector_saved_files = sorted(
+    [f for f in all_saved_files if inspector_slug in os.path.basename(f).lower() or not any(s in os.path.basename(f).lower() for s in ["soren", "huny", "driver_3", "driver_4"])],
     key=os.path.getmtime,
     reverse=True,
 )
 
-if saved_route_files:
-    file_options = ["-- Select a saved route --"] + [
-        os.path.basename(f) for f in saved_route_files
-    ]
-    selected_saved = st.sidebar.selectbox(
-        "Choose From Saved Routes:", file_options
-    )
+if inspector_saved_files:
+    file_options = ["-- Select a saved route --"] + [os.path.basename(f) for f in inspector_saved_files]
+    selected_saved = st.sidebar.selectbox("Choose From Saved Routes:", file_options)
     if st.sidebar.button("📥 Open Route", key="btn_load_saved"):
         if selected_saved != "-- Select a saved route --":
             target_path = os.path.join(SAVED_DIR, selected_saved)
@@ -593,41 +572,28 @@ if saved_route_files:
                 loaded_df = pd.read_csv(target_path)
                 recalled_rows = []
                 for _, r in loaded_df.iterrows():
-                    insp_id = (
-                        str(r["Name"]).strip()
-                        if "Name" in r
-                        else (
-                            str(r["Inspection ID"]).strip()
-                            if "Inspection ID" in r
-                            else str(r.iloc[0]).strip()
-                        )
-                    )
-                    addr = (
-                        str(r["Address"]).strip()
-                        if "Address" in r
-                        else str(r.iloc[1]).strip()
-                    )
+                    insp_id = str(r["Inspection ID"]).strip() if "Inspection ID" in r else str(r.iloc[0]).strip()
+                    addr = str(r["Address"]).strip() if "Address" in r else str(r.iloc[1]).strip()
+                    
                     if (
                         addr
                         and str(addr).lower() != "nan"
-                        and str(insp_id).lower()
-                        not in ["depot", "start/end depot", "nan"]
+                        and not str(addr).startswith("Start:")
+                        and not str(addr).startswith("End:")
+                        and str(insp_id).lower() not in ["depot", "start/end depot", "nan", ""]
                     ):
-                        recalled_rows.append(
-                            {"Inspection ID": insp_id, "Address": addr}
-                        )
+                        recalled_rows.append({"Inspection ID": insp_id, "Address": addr})
+
                 if recalled_rows:
                     persist_stops(pd.DataFrame(recalled_rows))
-                    st.toast(f"Opened {selected_saved} instantly!", icon="📂")
+                    st.toast(f"Opened {selected_saved} into {inspector_profile}'s desk!", icon="📂")
                     st.rerun()
             except Exception as e:
                 st.sidebar.error(f"Error loading file: {e}")
 
-# =========================================================================
-# DESKTOP: BULLETPROOF ADD STOP (FORCE GEOLOCATE & UNIQUE ID)
-# =========================================================================
+# Sidebar Add Stop
 st.sidebar.markdown("---")
-with st.sidebar.expander("➕ Add Stop / Special Address", expanded=True):
+with st.sidebar.expander("➕ Add Stop / Special Address", expanded=False):
     manual_addr_in = st.text_input(
         "Property Address:",
         placeholder="e.g. 100 Main St, Alexandria, VA",
@@ -641,8 +607,6 @@ with st.sidebar.expander("➕ Add Stop / Special Address", expanded=True):
     if st.sidebar.button("➕ Add Stop to Route", type="primary", use_container_width=True):
         if manual_addr_in.strip():
             cur_df = load_persisted_stops()
-            
-            # Form guaranteed unique ID
             final_id = manual_id_in.strip()
             if not final_id or final_id in cur_df["Inspection ID"].values:
                 final_id = f"ADD_{len(cur_df)+1}_{datetime.now().strftime('%H%M%S')}"
@@ -650,12 +614,11 @@ with st.sidebar.expander("➕ Add Stop / Special Address", expanded=True):
             new_entry = pd.DataFrame([{"Inspection ID": final_id, "Address": manual_addr_in.strip()}])
             updated_df = pd.concat([cur_df, new_entry], ignore_index=True)
             persist_stops(updated_df)
-            
-            # Immediately prime the geocache
+
             cache = load_cache()
             geocode_single_nominatim(manual_addr_in.strip(), cache)
 
-            st.toast(f"Added stop: {final_id}!", icon="✅")
+            st.toast(f"Added stop: {final_id} to {inspector_profile}!", icon="✅")
             st.rerun()
         else:
             st.sidebar.warning("Please type an address first.")
@@ -664,7 +627,7 @@ with st.sidebar.expander("➕ Add Stop / Special Address", expanded=True):
 st.sidebar.markdown("---")
 st.sidebar.subheader("📁 Import CSV Files")
 uploaded_files = st.sidebar.file_uploader(
-    "Upload Spreadsheets", type=["csv"], accept_multiple_files=True
+    f"Upload Spreadsheets for {inspector_profile}", type=["csv"], accept_multiple_files=True
 )
 
 master_df = load_persisted_stops()
@@ -672,7 +635,7 @@ master_df = load_persisted_stops()
 if uploaded_files:
     new_rows = []
     for f in uploaded_files:
-        if f.name not in st.session_state["processed_uploads"]:
+        if f.name not in st.session_state[f"processed_uploads_{inspector_slug}"]:
             try:
                 raw_df = pd.read_csv(f)
                 raw_df.columns = [str(c).strip() for c in raw_df.columns]
@@ -680,69 +643,39 @@ if uploaded_files:
                     for _, r in raw_df.iterrows():
                         insp_id = str(r["Name"]).strip()
                         addr = str(r["Address"]).strip()
-                        if addr and insp_id.lower() not in [
-                            "depot",
-                            "start/end depot",
-                            "nan",
-                        ]:
-                            new_rows.append(
-                                {"Inspection ID": insp_id, "Address": addr}
-                            )
+                        if addr and insp_id.lower() not in ["depot", "start/end depot", "nan"]:
+                            new_rows.append({"Inspection ID": insp_id, "Address": addr})
                 else:
                     for idx, row in raw_df.iterrows():
-                        insp_id = (
-                            str(row.iloc[0]).strip()
-                            if len(row) > 0
-                            else f"ID_{idx+1}"
-                        )
-                        addr1 = (
-                            str(row.get("Address1", ""))
-                            if "Address1" in row
-                            else ""
-                        )
+                        insp_id = str(row.iloc[0]).strip() if len(row) > 0 else f"ID_{idx+1}"
+                        addr1 = str(row.get("Address1", "")) if "Address1" in row else ""
                         city = str(row.get("City", "")) if "City" in row else ""
-                        state = (
-                            str(row.get("State", "")) if "State" in row else ""
-                        )
+                        state = str(row.get("State", "")) if "State" in row else ""
                         zip_c = str(row.get("Zip", "")) if "Zip" in row else ""
-                        full_addr = f"{addr1}, {city}, {state} {zip_c}".strip(
-                            ", "
-                        )
+                        full_addr = f"{addr1}, {city}, {state} {zip_c}".strip(", ")
                         if not full_addr or full_addr == ",":
-                            full_addr = (
-                                str(row.iloc[1]).strip()
-                                if len(row) > 1
-                                else insp_id
-                            )
+                            full_addr = str(row.iloc[1]).strip() if len(row) > 1 else insp_id
                         if full_addr and full_addr.lower() != "nan":
-                            new_rows.append(
-                                {"Inspection ID": insp_id, "Address": full_addr}
-                            )
-                st.session_state["processed_uploads"].add(f.name)
+                            new_rows.append({"Inspection ID": insp_id, "Address": full_addr})
+                st.session_state[f"processed_uploads_{inspector_slug}"].add(f.name)
             except Exception:
                 continue
 
     if new_rows:
-        master_df = pd.concat(
-            [master_df, pd.DataFrame(new_rows)], ignore_index=True
-        )
+        master_df = pd.concat([master_df, pd.DataFrame(new_rows)], ignore_index=True)
         master_df = persist_stops(master_df)
 
 # Route Controls
 st.sidebar.markdown("---")
-btn_reverse = st.sidebar.button(
-    "⇄ Reverse Entire Route Order", use_container_width=True
-)
+btn_reverse = st.sidebar.button("⇄ Reverse Entire Route Order", use_container_width=True)
 
-if st.sidebar.button(
-    "🔄 Clear Active Route & Start Fresh", use_container_width=True
-):
+if st.sidebar.button(f"🔄 Clear {inspector_profile}'s Route & Start Fresh", use_container_width=True):
     if os.path.exists(PERSISTENT_FILE):
         try:
             os.remove(PERSISTENT_FILE)
         except Exception:
             pass
-    st.session_state["processed_uploads"] = set()
+    st.session_state[f"processed_uploads_{inspector_slug}"] = set()
     st.rerun()
 
 # =========================================================================
@@ -759,9 +692,7 @@ if not master_df.empty:
         st.error(
             f"⚠️ **Attention: {len(failed_stops)} Address(es) could not be mapped automatically!**"
         )
-        with st.expander(
-            "🛠️️ Click Here to Review & Fix Unresolved Addresses", expanded=True
-        ):
+        with st.expander("🛠️ Click Here to Review & Fix Unresolved Addresses", expanded=True):
             for item in failed_stops:
                 f_idx = item["Index"]
                 f_id = item["Inspection ID"]
@@ -775,7 +706,7 @@ if not master_df.empty:
                 col_input, col_sugg, col_action = st.columns([4, 3, 1])
                 corrected_text = col_input.text_input(
                     f"Edit address for {f_id}:",
-                    value=f_addr,
+                    value=suggested_val,
                     key=f"fix_in_{f_idx}",
                 )
 
@@ -806,7 +737,7 @@ if not master_df.empty:
         dist_matrix, dur_matrix = build_road_distance_matrix_cached(coords)
 
         # Desktop Optimization Form
-        st.markdown("### ⚡ Route Direction & Optimization")
+        st.markdown(f"### ⚡ Route Direction & Optimization ({inspector_profile})")
         stop_options = ["-- Auto-Pick Closest Stop --"] + [
             f"#{i+1}: {r['Inspection ID']} ({str(r['Address'])[:22]}...)"
             for i, r in valid_master_df.iterrows()
@@ -814,16 +745,10 @@ if not master_df.empty:
 
         with st.form("optimizer_control_form"):
             c_start, c_end, c_btn = st.columns([4, 4, 3], gap="medium")
-            selected_first_opt = c_start.selectbox(
-                "📍 Lock First Stop:", stop_options, index=0
-            )
-            selected_last_opt = c_end.selectbox(
-                "🏁 Lock Last Stop:", stop_options, index=0
-            )
+            selected_first_opt = c_start.selectbox("📍 Lock First Stop:", stop_options, index=0)
+            selected_last_opt = c_end.selectbox("🏁 Lock Last Stop:", stop_options, index=0)
 
-            c_btn.markdown(
-                "<div style='height: 28px;'></div>", unsafe_allow_html=True
-            )
+            c_btn.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
             btn_do_optimize = c_btn.form_submit_button(
                 "⚡ Auto-Optimize Route",
                 type="primary",
@@ -833,52 +758,26 @@ if not master_df.empty:
             if btn_do_optimize:
                 first_row_id = None
                 if selected_first_opt != "-- Auto-Pick Closest Stop --":
-                    raw_first_idx = (
-                        int(selected_first_opt.split(":")[0].replace("#", ""))
-                        - 1
-                    )
-                    first_row_id = valid_master_df.iloc[raw_first_idx][
-                        "Inspection ID"
-                    ]
+                    raw_first_idx = int(selected_first_opt.split(":")[0].replace("#", "")) - 1
+                    first_row_id = valid_master_df.iloc[raw_first_idx]["Inspection ID"]
 
                 last_row_id = None
                 if selected_last_opt != "-- Auto-Pick Closest Stop --":
-                    raw_last_idx = (
-                        int(selected_last_opt.split(":")[0].replace("#", ""))
-                        - 1
-                    )
-                    last_row_id = valid_master_df.iloc[raw_last_idx][
-                        "Inspection ID"
-                    ]
+                    raw_first_idx = int(selected_last_opt.split(":")[0].replace("#", "")) - 1
+                    last_row_id = valid_master_df.iloc[raw_last_idx]["Inspection ID"]
 
                 if first_row_id is not None:
-                    match_first = valid_master_df[
-                        valid_master_df["Inspection ID"] == first_row_id
-                    ]
-                    rest = valid_master_df[
-                        valid_master_df["Inspection ID"] != first_row_id
-                    ]
-                    valid_master_df = pd.concat([match_first, rest]).reset_index(
-                        drop=True
-                    )
+                    match_first = valid_master_df[valid_master_df["Inspection ID"] == first_row_id]
+                    rest = valid_master_df[valid_master_df["Inspection ID"] != first_row_id]
+                    valid_master_df = pd.concat([match_first, rest]).reset_index(drop=True)
 
                 if last_row_id is not None and last_row_id != first_row_id:
-                    match_last = valid_master_df[
-                        valid_master_df["Inspection ID"] == last_row_id
-                    ]
-                    rest = valid_master_df[
-                        valid_master_df["Inspection ID"] != last_row_id
-                    ]
-                    valid_master_df = pd.concat([rest, match_last]).reset_index(
-                        drop=True
-                    )
+                    match_last = valid_master_df[valid_master_df["Inspection ID"] == last_row_id]
+                    rest = valid_master_df[valid_master_df["Inspection ID"] != last_row_id]
+                    valid_master_df = pd.concat([rest, match_last]).reset_index(drop=True)
 
-                coords, valid_indices, _ = get_coordinates_and_failed_stops(
-                    valid_master_df, depot_address
-                )
-                dist_matrix, dur_matrix = build_road_distance_matrix_cached(
-                    coords
-                )
+                coords, valid_indices, _ = get_coordinates_and_failed_stops(valid_master_df, depot_address)
+                dist_matrix, dur_matrix = build_road_distance_matrix_cached(coords)
 
                 optimized_nodes = optimize_stops_sequence(
                     dist_matrix,
@@ -887,9 +786,7 @@ if not master_df.empty:
                 )
 
                 reordered_indices = [n - 1 for n in optimized_nodes]
-                valid_master_df = valid_master_df.iloc[
-                    reordered_indices
-                ].reset_index(drop=True)
+                valid_master_df = valid_master_df.iloc[reordered_indices].reset_index(drop=True)
                 persist_stops(valid_master_df)
                 st.toast("Route optimized successfully!", icon="⚡")
                 st.rerun()
@@ -898,11 +795,9 @@ if not master_df.empty:
         routes = {0: [0] + list(range(1, num_valid + 1)) + [0]}
 
         generate_map(coords, routes)
-        schedules = calculate_schedule(
-            coords, routes, dist_matrix, dur_matrix, start_time, stop_duration
-        )
+        schedules = calculate_schedule(coords, routes, dist_matrix, dur_matrix, start_time, stop_duration)
         sched_df = schedules[0]
-        custom_route_name = f"Route_{datetime.now().strftime('%Y%m%d_%H%M')}"
+        custom_route_name = f"{inspector_profile}_Route_{datetime.now().strftime('%Y%m%d_%H%M')}"
 
         # =========================================================================
         # VIEW 1: DESKTOP PLANNER
@@ -911,67 +806,63 @@ if not master_df.empty:
             col_list, col_map = st.columns([1, 2], gap="small")
 
             with col_list:
-                st.markdown(
-                    f"### 📋 Manage Stops ({len(valid_master_df)} Active)"
-                )
+                st.markdown(f"### 📋 Manage Stops ({len(valid_master_df)} Active)")
                 table_rows = []
                 for i, r in valid_master_df.iterrows():
                     table_rows.append(
                         {
                             "Drop?": False,
-                            "Stop #": i + 1,
+                            "Stop #": int(i + 1),
                             "Inspection ID": str(r["Inspection ID"]),
                             "Address": str(r["Address"]),
                         }
                     )
                 edit_table = pd.DataFrame(table_rows)
 
-                with st.form("bulk_prune_form", clear_on_submit=False):
+                with st.form("bulk_reorder_and_prune_form", clear_on_submit=False):
                     edited_df = st.data_editor(
                         edit_table,
                         column_config={
-                            "Drop?": st.column_config.CheckboxColumn(
-                                "Drop?", default=False
-                            ),
+                            "Drop?": st.column_config.CheckboxColumn("Drop?", default=False),
                             "Stop #": st.column_config.NumberColumn(
-                                "#", width="small"
+                                "Stop #",
+                                min_value=1,
+                                max_value=len(table_rows) + 50,
+                                step=1,
+                                width="small",
+                                help="Change numbers directly to rearrange stops",
                             ),
-                            "Inspection ID": st.column_config.TextColumn(
-                                "ID", width="medium"
-                            ),
-                            "Address": st.column_config.TextColumn(
-                                "Address", width="medium"
-                            ),
+                            "Inspection ID": st.column_config.TextColumn("ID", width="medium"),
+                            "Address": st.column_config.TextColumn("Address", width="medium"),
                         },
                         disabled=["Inspection ID", "Address"],
                         hide_index=True,
                         use_container_width=True,
                         height=650,
                     )
-                    submit_prune = st.form_submit_button(
-                        "💾 Apply Changes / Remove Selected",
+
+                    submit_changes = st.form_submit_button(
+                        "💾 Apply Sequence & Reorder Changes",
                         type="primary",
                         use_container_width=True,
                     )
-                    if submit_prune:
-                        to_remove_ids = edited_df[edited_df["Drop?"] == True][
-                            "Inspection ID"
-                        ].tolist()
-                        if to_remove_ids:
-                            valid_master_df = valid_master_df[
-                                ~valid_master_df["Inspection ID"].isin(
-                                    to_remove_ids
-                                )
-                            ].reset_index(drop=True)
-                            persist_stops(valid_master_df)
-                            st.toast(
-                                f"Removed {len(to_remove_ids)} inspections!",
-                                icon="🗑️",
-                            )
-                            st.rerun()
+
+                    if submit_changes:
+                        kept_df = edited_df[edited_df["Drop?"] == False].copy()
+                        kept_df["Stop #"] = pd.to_numeric(kept_df["Stop #"], errors="coerce").fillna(9999)
+                        kept_df = kept_df.sort_values(by=["Stop #"]).reset_index(drop=True)
+
+                        order_map = {row["Inspection ID"]: idx for idx, row in kept_df.iterrows()}
+                        valid_master_df = valid_master_df[valid_master_df["Inspection ID"].isin(order_map.keys())].copy()
+                        valid_master_df["_sort_key"] = valid_master_df["Inspection ID"].map(order_map)
+                        valid_master_df = valid_master_df.sort_values(by=["_sort_key"]).drop(columns=["_sort_key"]).reset_index(drop=True)
+
+                        persist_stops(valid_master_df)
+                        st.toast("Updated sequence & removed selected stops!", icon="💾")
+                        st.rerun()
 
             with col_map:
-                st.markdown("### 🗺️ Live Route Map")
+                st.markdown(f"### 🗺️ Live Route Map ({inspector_profile})")
                 if os.path.exists("route_map.html"):
                     with open("route_map.html", "r", encoding="utf-8") as f:
                         components.html(f.read(), height=750)
@@ -981,47 +872,34 @@ if not master_df.empty:
             first_row = sched_df.iloc[0]
             col_m1, col_m2, col_m3, col_m4 = st.columns(4)
             col_m1.metric("🚗 Total Mileage", f"{final_row['Total Miles']:.1f} mi")
-            col_m2.metric(
-                "⏱️ Total Planned Span",
-                f"{first_row['Arrival']} - {final_row['Arrival']}",
-            )
+            col_m2.metric("⏱️ Total Planned Span", f"{first_row['Arrival']} - {final_row['Arrival']}")
             col_m3.metric("📍 Active Stops", f"{max(0, len(sched_df) - 2)}")
             col_m4.metric("🏁 Target Office Return", final_row["Arrival"])
 
             # ----------------- SAVE ROUTE & EXPORTS -----------------
             st.markdown("---")
-            st.subheader("💾 Save Route & Export Data")
+            st.subheader(f"💾 Save Route & Export Data ({inspector_profile})")
             exp_col1, exp_col2, exp_col3, exp_col4 = st.columns(4)
 
             with exp_col1:
-                default_name = f"Route_{datetime.now().strftime('%Y%m%d_%H%M')}"
-                route_save_name = st.text_input(
-                    "Save As Route Name:",
-                    value=default_name,
-                    key="desk_save_rt_name",
-                )
-                if st.button(
-                    "💾 Save Route", type="primary", use_container_width=True
-                ):
+                default_name = f"{inspector_profile}_{datetime.now().strftime('%Y%m%d_%H%M')}"
+                route_save_name = st.text_input("Save As Route Name:", value=default_name, key=f"desk_save_{inspector_slug}")
+                if st.button("💾 Save Route", type="primary", use_container_width=True):
                     os.makedirs(SAVED_DIR, exist_ok=True)
-                    save_path = os.path.join(
-                        SAVED_DIR, f"{route_save_name}.csv"
-                    )
-                    sched_df.to_csv(save_path, index=False)
-                    st.toast(
-                        f"Saved {route_save_name} successfully!", icon="💾"
-                    )
+                    save_path = os.path.join(SAVED_DIR, f"{route_save_name}.csv")
+                    valid_master_df.to_csv(save_path, index=False)
+                    st.toast(f"Saved {route_save_name} cleanly!", icon="💾")
                     st.rerun()
 
             with exp_col2:
                 csv_bytes = sched_df.to_csv(index=False).encode("utf-8")
                 st.download_button(
-                    label="📥 Download CSV",
+                    label="📥 Download CSV Timetable",
                     data=csv_bytes,
-                    file_name=f"{route_save_name}.csv",
+                    file_name=f"{route_save_name}_timetable.csv",
                     mime="text/csv",
-                    key="desk_dl_csv",
-                    use_container_width=True,
+                    key=f"desk_dl_csv_{inspector_slug}",
+                    use_container_width=True
                 )
 
             with exp_col3:
@@ -1031,8 +909,8 @@ if not master_df.empty:
                     data=gpx_data,
                     file_name=f"{route_save_name}.gpx",
                     mime="application/gpx+xml",
-                    key="desk_dl_gpx",
-                    use_container_width=True,
+                    key=f"desk_dl_gpx_{inspector_slug}",
+                    use_container_width=True
                 )
 
             with exp_col4:
@@ -1042,8 +920,8 @@ if not master_df.empty:
                     data=txt_data,
                     file_name=f"{route_save_name}_directions.txt",
                     mime="text/plain",
-                    key="desk_dl_txt",
-                    use_container_width=True,
+                    key=f"desk_dl_txt_{inspector_slug}",
+                    use_container_width=True
                 )
 
         # =========================================================================
@@ -1053,10 +931,8 @@ if not master_df.empty:
             final_row = sched_df.iloc[-1]
             total_inspections = max(0, len(sched_df) - 2)
 
-            st.markdown(f"## 📱 Mobile Driver Deck")
-            st.caption(
-                f"**Route:** {custom_route_name} | Circuit-grade telemetry & locked timetable"
-            )
+            st.markdown(f"## 📱 Mobile Driver Deck — {inspector_profile}")
+            st.caption(f"**Route:** {custom_route_name} | Circuit-grade telemetry & locked timetable")
 
             c_mb1, c_mb2, c_mb3 = st.columns(3)
             c_mb1.metric("📍 Total Stops", f"{total_inspections}")
@@ -1071,13 +947,9 @@ if not master_df.empty:
             for idx, row in sched_df.iterrows():
                 insp_id = str(row.get("Inspection ID", "")).strip()
                 desc = str(row.get("Description", "")).strip()
-                raw_addr = (
-                    desc.replace("Start: ", "").replace("End: ", "").strip()
-                )
+                raw_addr = desc.replace("Start: ", "").replace("End: ", "").strip()
 
-                parts = [
-                    p.strip() for p in raw_addr.split(",") if p.strip()
-                ]
+                parts = [p.strip() for p in raw_addr.split(",") if p.strip()]
                 street_val = parts[0] if len(parts) > 0 else raw_addr
                 city_val = parts[1] if len(parts) > 1 else ""
                 state_val = "VA"
@@ -1125,8 +997,7 @@ if not master_df.empty:
                 )
 
             stops_json_str = json.dumps(stops_payload)
-            # Route signature incorporates total count so adding stops clears the mobile deck cache
-            route_sig = f"sig_{len(stops_payload)}_{planned_total_miles}_{total_inspections}_{datetime.now().strftime('%d%H%M')}"
+            route_sig = f"sig_{inspector_slug}_{len(stops_payload)}_{planned_total_miles}_{total_inspections}_{datetime.now().strftime('%d%H%M')}"
 
             deck_html = f"""<!DOCTYPE html>
 <html>
@@ -1425,13 +1296,15 @@ if not master_df.empty:
         const totalInspectionsCount = {total_inspections};
         const currentSig = "{route_sig}";
 
-        const savedSig = localStorage.getItem("cfs_sig");
+        const savedSig = localStorage.getItem("cfs_sig_{inspector_slug}");
         if (savedSig !== currentSig) {{
-            localStorage.clear();
-            localStorage.setItem("cfs_sig", currentSig);
+            localStorage.removeItem("cfs_stops_{inspector_slug}");
+            localStorage.removeItem("cfs_idx_{inspector_slug}");
+            localStorage.removeItem("cfs_banked_min_{inspector_slug}");
+            localStorage.setItem("cfs_sig_{inspector_slug}", currentSig);
         }}
 
-        const savedStops = localStorage.getItem("cfs_stops");
+        const savedStops = localStorage.getItem("cfs_stops_{inspector_slug}");
         if (savedStops) {{
             try {{
                 const parsed = JSON.parse(savedStops);
@@ -1439,11 +1312,11 @@ if not master_df.empty:
             }} catch(e) {{}}
         }}
 
-        let curIdx = parseInt(localStorage.getItem("cfs_idx") || "0", 10);
+        let curIdx = parseInt(localStorage.getItem("cfs_idx_{inspector_slug}") || "0", 10);
         if (isNaN(curIdx) || curIdx >= stops.length) curIdx = 0;
         if (curIdx === 0 && stops[0].is_depot && stops.length > 1) curIdx = 1;
 
-        let bankedMinutes = parseFloat(localStorage.getItem("cfs_banked_min") || "0.0");
+        let bankedMinutes = parseFloat(localStorage.getItem("cfs_banked_min_{inspector_slug}") || "0.0");
         let liveCoords = null;
 
         if (navigator.geolocation) {{
@@ -1465,9 +1338,9 @@ if not master_df.empty:
 
         function autoSave() {{
             try {{
-                localStorage.setItem("cfs_stops", JSON.stringify(stops));
-                localStorage.setItem("cfs_idx", curIdx.toString());
-                localStorage.setItem("cfs_banked_min", bankedMinutes.toString());
+                localStorage.setItem("cfs_stops_{inspector_slug}", JSON.stringify(stops));
+                localStorage.setItem("cfs_idx_{inspector_slug}", curIdx.toString());
+                localStorage.setItem("cfs_banked_min_{inspector_slug}", bankedMinutes.toString());
             }} catch(e) {{}}
         }}
 
@@ -1596,7 +1469,7 @@ if not master_df.empty:
                 stops.splice(curIdx, 1);
                 if (curIdx >= stops.length) curIdx = Math.max(0, stops.length - 1);
                 updateDeck();
-                showToast("🗑️️ Stop Deleted");
+                showToast("🗑️ Stop Deleted");
             }}
         }}
 
@@ -1646,7 +1519,7 @@ if not master_df.empty:
             let tokens = [street, city, state, zip].filter(Boolean);
             const fullDest = tokens.join(", ");
 
-            fetch("https://nominatim.openstreetmap.org/search?q=" + encodeURIComponent(fullDest) + "&format=json&limit=1")
+            fetch("https://nominatim.openstreetmap.org/search?q=" + encodeURIComponent(fullDest) + "&format=json&limit=1&countrycodes=us")
                 .then(r => r.json())
                 .then(data => {{
                     let lat = (data && data.length > 0) ? parseFloat(data[0].lat) : 0.0;
