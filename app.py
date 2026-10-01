@@ -144,7 +144,7 @@ def geocode_single_nominatim(address, cache):
     if arc_coords:
         return arc_coords
 
-    geolocator = Nominatim(user_agent="cfs_field_geocoder_us_v38")
+    geolocator = Nominatim(user_agent="cfs_field_geocoder_us_v39")
     try:
         clean_addr = strip_unit_designation(address)
         location = geolocator.geocode(
@@ -511,7 +511,7 @@ def persist_stops(df):
 def search_address(query):
     if not query or len(query.strip()) < 3:
         return []
-    geolocator = Nominatim(user_agent="cfs_field_geocoder_us_v38")
+    geolocator = Nominatim(user_agent="cfs_field_geocoder_us_v39")
     try:
         locations = geolocator.geocode(
             query,
@@ -736,7 +736,7 @@ if not master_df.empty:
     if not valid_master_df.empty and len(coords) > 1:
         dist_matrix, dur_matrix = build_road_distance_matrix_cached(coords)
 
-        # Desktop Optimization Form (Defensive Parsing Guard)
+        # Desktop Optimization Form
         st.markdown(f"### ⚡ Route Direction & Optimization ({inspector_profile})")
         stop_options = ["-- Auto-Pick Closest Stop --"] + [
             f"#{i+1}: {r['Inspection ID']} ({str(r['Address'])[:22]}...)"
@@ -931,23 +931,14 @@ if not master_df.empty:
                 )
 
         # =========================================================================
-        # VIEW 2: MOBILE DRIVER DECK (LOCKED ENGINE & CIRCUIT WORKFLOW)
+        # VIEW 2: MOBILE DRIVER DECK (DIRECT CLOCK & COUNTDOWN RANGE)
         # =========================================================================
         elif view_mode == "📱 Mobile Driver Deck":
             final_row = sched_df.iloc[-1]
             total_inspections = max(0, len(sched_df) - 2)
 
             st.markdown(f"## 📱 Mobile Driver Deck — {inspector_profile}")
-            st.caption(f"**Route:** {custom_route_name} | Circuit-grade telemetry & locked timetable")
-
-            c_mb1, c_mb2, c_mb3 = st.columns(3)
-            c_mb1.metric("📍 Total Stops", f"{total_inspections}")
-            c_mb2.metric("🚗 Total Route", f"{final_row['Total Miles']:.1f} mi")
-            c_mb3.metric("🏁 Target Base ETA", f"{final_row['Arrival']}")
-            st.markdown("---")
-
-            planned_total_miles = float(final_row["Total Miles"])
-            planned_finish_str = str(final_row["Arrival"]).strip()
+            st.caption(f"**Route:** {custom_route_name} | Real-Time Range & Pure Clock Sync")
 
             stops_payload = []
             for idx, row in sched_df.iterrows():
@@ -979,6 +970,11 @@ if not master_df.empty:
                 is_depot = idx == 0 or idx == len(sched_df) - 1
                 is_finish = idx == len(sched_df) - 1
 
+                # Clean Work Order (Strips repeated address if merged)
+                clean_order_val = insp_id
+                if "/" in clean_order_val:
+                    clean_order_val = clean_order_val.split("/")[-1].strip()
+
                 stops_payload.append(
                     {
                         "row_idx": idx,
@@ -989,7 +985,7 @@ if not master_df.empty:
                         "state": state_val,
                         "zip": zip_val,
                         "full_dest": full_verified_dest,
-                        "order_num": insp_id,
+                        "order_num": clean_order_val,
                         "planned_arrival": str(row.get("Arrival", "--:--")),
                         "cum_miles": float(row.get("Total Miles", 0.0)),
                         "leg_miles": float(row.get("Leg Miles", 0.0)),
@@ -997,13 +993,12 @@ if not master_df.empty:
                         "lon": float(row.get("Longitude", 0.0)),
                         "is_depot": is_depot,
                         "is_finish_leg": is_finish,
-                        "status": "pending",
-                        "arrived_at": None,
+                        "status": "pending"
                     }
                 )
 
             stops_json_str = json.dumps(stops_payload)
-            route_sig = f"sig_{inspector_slug}_{len(stops_payload)}_{planned_total_miles}_{total_inspections}_{datetime.now().strftime('%d%H%M')}"
+            route_sig = f"sig_{inspector_slug}_{len(stops_payload)}_{total_inspections}_{datetime.now().strftime('%d%H%M')}"
 
             deck_html = f"""<!DOCTYPE html>
 <html>
@@ -1039,19 +1034,18 @@ if not master_df.empty:
 
         .hud-bar {{
             display: grid;
-            grid-template-columns: repeat(5, 1fr);
+            grid-template-columns: repeat(4, 1fr);
             background: #111827;
             border: 1px solid #1f2937;
             border-radius: 12px;
-            padding: 10px 2px;
+            padding: 10px 4px;
             margin-bottom: 12px;
             text-align: center;
         }}
-        .hud-label {{ font-size: 0.58rem; color: #9ca3af; text-transform: uppercase; font-weight: 800; margin-bottom: 2px; }}
-        .hud-val {{ font-size: 0.95rem; font-weight: 800; }}
-        .c-blue {{ color: #60a5fa; }}
-        .c-orange {{ color: #fb923c; }}
+        .hud-label {{ font-size: 0.62rem; color: #9ca3af; text-transform: uppercase; font-weight: 800; margin-bottom: 2px; }}
+        .hud-val {{ font-size: 1.05rem; font-weight: 800; }}
         .c-green {{ color: #34d399; }}
+        .c-orange {{ color: #fb923c; }}
         .c-yellow {{ color: #fbbf24; }}
         .c-cyan {{ color: #38bdf8; }}
         .hud-sep {{ border-left: 1px solid #1f2937; }}
@@ -1196,24 +1190,20 @@ if not master_df.empty:
 
     <div class="hud-bar">
         <div>
-            <div class="hud-label">Stop</div>
-            <div class="hud-val c-blue" id="hud-stop">1/{total_inspections}</div>
+            <div class="hud-label">Completed</div>
+            <div class="hud-val c-green" id="hud-done">0</div>
         </div>
         <div>
-            <div class="hud-label">Left</div>
+            <div class="hud-label">Stops Left</div>
             <div class="hud-val c-orange" id="hud-left">{total_inspections}</div>
         </div>
         <div>
-            <div class="hud-label">Driven</div>
-            <div class="hud-val c-green" id="hud-driven">0 mi</div>
-        </div>
-        <div>
-            <div class="hud-label">Total Miles</div>
-            <div class="hud-val c-yellow" id="hud-to-office">{int(round(planned_total_miles))} mi</div>
+            <div class="hud-label">Miles to Go</div>
+            <div class="hud-val c-yellow" id="hud-miles-left">-- mi</div>
         </div>
         <div class="hud-sep">
-            <div class="hud-label">Office ETA</div>
-            <div class="hud-val c-cyan" id="hud-finish">{planned_finish_str}</div>
+            <div class="hud-label">Base ETA</div>
+            <div class="hud-val c-cyan" id="hud-finish">--:--</div>
         </div>
     </div>
 
@@ -1223,7 +1213,7 @@ if not master_df.empty:
         <div class="card-city" id="disp-city"></div>
         
         <div class="card-info-box">
-            <div class="info-line"><span class="info-bold">Planned Target:</span> <span id="disp-planned-arrival">--:--</span></div>
+            <div class="info-line"><span class="info-bold">Estimated Arrival:</span> <span id="disp-planned-arrival">--:--</span></div>
             <div class="info-line"><span class="info-bold">Work Order:</span> <span id="disp-order">--</span></div>
         </div>
     </div>
@@ -1243,15 +1233,14 @@ if not master_df.empty:
         <button class="btn-tool" onclick="openTimetableModal()">📋 Upcoming</button>
     </div>
 
-    <!-- Circuit Action Split Modal -->
     <div id="reopt-modal" class="modal-overlay">
         <div class="modal-sheet">
             <h3 style="margin-top:0; color:#fff;">Reoptimization Options</h3>
-            <p style="color:#94a3b8; font-size:0.85rem; margin-bottom:14px;">Select how to adjust the remaining route from your physical location:</p>
+            <p style="color:#94a3b8; font-size:0.85rem; margin-bottom:14px;">Update remaining route from your physical location:</p>
             
             <button class="modal-opt-btn" onclick="executeSyncOnly()">
-                <strong>➔ Update Route (Sync Only)</strong>
-                <span>Preserve stop order; recalculate driving legs from current GPS</span>
+                <strong>➔ Update Route (Sync Mileage)</strong>
+                <span>Preserve stop order; recalculate driving legs & countdown mileage</span>
             </button>
             
             <button class="modal-opt-btn" onclick="executeFullReoptimize()">
@@ -1263,11 +1252,10 @@ if not master_df.empty:
         </div>
     </div>
 
-    <!-- Add Stop Modal -->
     <div id="add-modal" class="modal-overlay">
         <div class="modal-sheet">
             <h3 style="margin-top:0; color:#fff;">Add Inspection Stop</h3>
-            <input type="text" id="modal-street" style="width:100%; padding:12px; margin-bottom:8px; border-radius:8px; background:#0b132b; color:#fff; border:1px solid #475569;" placeholder="Street Address (e.g. 12253 Piney Ln)">
+            <input type="text" id="modal-street" style="width:100%; padding:12px; margin-bottom:8px; border-radius:8px; background:#0b132b; color:#fff; border:1px solid #475569;" placeholder="Street Address">
             <div style="display:grid; grid-template-columns: 2fr 1fr 1fr; gap:6px; margin-bottom:8px;">
                 <input type="text" id="modal-city" style="padding:10px; border-radius:8px; background:#0b132b; color:#fff; border:1px solid #475569;" placeholder="City">
                 <input type="text" id="modal-state" style="padding:10px; border-radius:8px; background:#0b132b; color:#fff; border:1px solid #475569;" value="VA">
@@ -1280,7 +1268,6 @@ if not master_df.empty:
         </div>
     </div>
 
-    <!-- Upcoming Stops Modal (Circuit-Style Itinerary List) -->
     <div id="timetable-modal" class="modal-overlay">
         <div class="modal-sheet" style="max-height: 80vh; display: flex; flex-direction: column;">
             <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; padding-bottom: 10px; margin-bottom: 10px;">
@@ -1297,8 +1284,6 @@ if not master_df.empty:
 
     <script>
         let stops = {stops_json_str};
-        const MASTER_TOTAL_MILES = {planned_total_miles};
-        const baselineFinishStr = "{planned_finish_str}";
         const totalInspectionsCount = {total_inspections};
         const currentSig = "{route_sig}";
 
@@ -1306,7 +1291,6 @@ if not master_df.empty:
         if (savedSig !== currentSig) {{
             localStorage.removeItem("cfs_stops_{inspector_slug}");
             localStorage.removeItem("cfs_idx_{inspector_slug}");
-            localStorage.removeItem("cfs_banked_min_{inspector_slug}");
             localStorage.setItem("cfs_sig_{inspector_slug}", currentSig);
         }}
 
@@ -1322,9 +1306,7 @@ if not master_df.empty:
         if (isNaN(curIdx) || curIdx >= stops.length) curIdx = 0;
         if (curIdx === 0 && stops[0].is_depot && stops.length > 1) curIdx = 1;
 
-        let bankedMinutes = parseFloat(localStorage.getItem("cfs_banked_min_{inspector_slug}") || "0.0");
         let liveCoords = null;
-
         if (navigator.geolocation) {{
             navigator.geolocation.watchPosition(
                 function(pos) {{
@@ -1333,6 +1315,16 @@ if not master_df.empty:
                 function(err) {{}},
                 {{ enableHighAccuracy: true, maximumAge: 5000 }}
             );
+        }}
+
+        function formatClock(dateObj) {{
+            let hrs = dateObj.getHours();
+            let mins = dateObj.getMinutes();
+            let ampm = hrs >= 12 ? 'PM' : 'AM';
+            hrs = hrs % 12;
+            hrs = hrs ? hrs : 12;
+            mins = mins < 10 ? '0' + mins : mins;
+            return hrs + ':' + mins + ' ' + ampm;
         }}
 
         function showToast(msg) {{
@@ -1346,38 +1338,7 @@ if not master_df.empty:
             try {{
                 localStorage.setItem("cfs_stops_{inspector_slug}", JSON.stringify(stops));
                 localStorage.setItem("cfs_idx_{inspector_slug}", curIdx.toString());
-                localStorage.setItem("cfs_banked_min_{inspector_slug}", bankedMinutes.toString());
             }} catch(e) {{}}
-        }}
-
-        function applyDeltaToTimeString(baseTimeStr, deltaMinutes) {{
-            try {{
-                let d = new Date();
-                let match = baseTimeStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
-                if (!match) return baseTimeStr;
-                let hrs = parseInt(match[1], 10);
-                let mins = parseInt(match[2], 10);
-                let ampm = match[3].toUpperCase();
-
-                if (ampm === "PM" && hrs < 12) hrs += 12;
-                if (ampm === "AM" && hrs === 12) hrs = 0;
-
-                d.setHours(hrs);
-                d.setMinutes(mins);
-                d.setSeconds(0);
-
-                let adjusted = new Date(d.getTime() - (deltaMinutes * 60000));
-                
-                let outHrs = adjusted.getHours();
-                let outMins = adjusted.getMinutes();
-                let outAmpm = outHrs >= 12 ? 'PM' : 'AM';
-                outHrs = outHrs % 12;
-                outHrs = outHrs ? outHrs : 12;
-                outMins = outMins < 10 ? '0' + outMins : outMins;
-                return outHrs + ':' + outMins + ' ' + outAmpm;
-            }} catch(e) {{
-                return baseTimeStr;
-            }}
         }}
 
         function updateDeck() {{
@@ -1386,51 +1347,56 @@ if not master_df.empty:
 
             const s = stops[curIdx];
 
-            if (!s.arrived_at && !s.is_depot && s.status === "pending") {{
-                s.arrived_at = Date.now();
-            }}
-
-            let activeInsps = stops.filter(function(st) {{ return !st.is_depot && st.status !== "deleted"; }});
-            let totalActive = activeInsps.length > 0 ? activeInsps.length : totalInspectionsCount;
+            // 1. Completed vs Left counts
+            let completedCount = stops.filter(function(st) {{ return !st.is_depot && st.status === "completed"; }}).length;
             let inspsLeft = stops.slice(curIdx).filter(function(st) {{ return !st.is_depot && st.status === "pending"; }}).length;
 
+            document.getElementById("hud-done").innerText = completedCount;
+            document.getElementById("hud-left").innerText = inspsLeft;
+
+            // 2. Exact Countdown "Miles to Go" (remaining driving legs + return to base leg)
+            let remainingMiles = 0.0;
+            let totalRemainingDrivingMinutes = 0;
+            for (let i = curIdx; i < stops.length; i++) {{
+                let m = parseFloat(stops[i].leg_miles || 0.0);
+                remainingMiles += m;
+                // Realistic DMV driving pace: ~2.5 mins per mile
+                totalRemainingDrivingMinutes += Math.max(2, Math.round(m * 2.5));
+            }}
+            document.getElementById("hud-miles-left").innerText = Math.round(remainingMiles) + " mi";
+
+            // 3. Direct Anchor Base ETA: Current Time + Remaining Drive Time + 5 mins per remaining property
+            let totalRemainingMinutes = totalRemainingDrivingMinutes + (inspsLeft * 5);
+            let finishDate = new Date(Date.now() + (totalRemainingMinutes * 60000));
+            document.getElementById("hud-finish").innerText = formatClock(finishDate);
+
+            // 4. Update Current Card Information
             if (s.is_depot) {{
-                document.getElementById("hud-stop").innerText = s.is_finish_leg ? "END" : "START";
                 document.getElementById("disp-badge").className = "card-badge badge-depot";
                 document.getElementById("disp-badge").innerText = s.is_finish_leg ? "🏁 RETURN TO BASE" : "DEPARTURE BASE";
             }} else {{
+                let activeInsps = stops.filter(function(st) {{ return !st.is_depot && st.status !== "deleted"; }});
+                let totalActive = activeInsps.length > 0 ? activeInsps.length : totalInspectionsCount;
                 let currentNum = stops.slice(0, curIdx + 1).filter(function(st) {{ return !st.is_depot && st.status !== "deleted"; }}).length;
-                document.getElementById("hud-stop").innerText = currentNum + "/" + totalActive;
                 document.getElementById("disp-badge").className = "card-badge badge-inspection";
                 document.getElementById("disp-badge").innerText = "INSPECTION #" + currentNum + " OF " + totalActive;
             }}
 
-            document.getElementById("hud-left").innerText = inspsLeft;
-
-            let drivenMiles = 0.0;
-            for (let i = 0; i < curIdx; i++) {{
-                if (stops[i].status === "completed") {{
-                    drivenMiles += parseFloat(stops[i].leg_miles || 0.0);
-                }}
-            }}
-            document.getElementById("hud-driven").innerText = Math.round(drivenMiles) + " mi";
-            document.getElementById("hud-to-office").innerText = Math.round(MASTER_TOTAL_MILES) + " mi";
-
-            let dynamicFinish = applyDeltaToTimeString(baselineFinishStr, bankedMinutes);
-            document.getElementById("hud-finish").innerText = dynamicFinish;
-
             document.getElementById("disp-addr").innerText = s.street || "Property Address";
             let cityLine = [s.city, s.state, s.zip].filter(Boolean).join(", ");
-            document.getElementById("disp-city").innerText = cityLine ? ("📍 " + cityLine) : "📍 Virginia";
+            document.getElementById("disp-city").innerText = cityLine ? ("📍 " + cityLine) : "📍";
             document.getElementById("disp-order").innerText = s.order_num || "N/A";
             
-            let plannedArrivalAdjusted = applyDeltaToTimeString(s.planned_arrival, bankedMinutes);
-            document.getElementById("disp-planned-arrival").innerText = plannedArrivalAdjusted;
+            // Estimated Arrival for current stop: now + current leg driving time
+            let legMinutes = Math.max(2, Math.round(parseFloat(s.leg_miles || 0.0) * 2.5));
+            let stopArrivalDate = new Date(Date.now() + (legMinutes * 60000));
+            document.getElementById("disp-planned-arrival").innerText = formatClock(stopArrivalDate);
 
-            let verifiedNavTokens = [s.street, s.city || "Front Royal", s.state || "VA", s.zip].filter(Boolean);
-            let verifiedAddress = verifiedNavTokens.join(", ");
+            // Google Maps Nav Link
+            let verifiedAddress = [s.street, s.city, s.state, s.zip].filter(Boolean).join(", ");
             document.getElementById("nav-link").href = "https://www.google.com/maps/dir/?api=1&destination=" + encodeURIComponent(verifiedAddress) + "&travelmode=driving";
 
+            // Next button labeling
             const btnNext = document.getElementById("btn-next-action");
             if (curIdx === stops.length - 2 && stops[stops.length - 1].is_depot) {{
                 btnNext.innerText = "Finish & Return to Base 🏁";
@@ -1445,41 +1411,10 @@ if not master_df.empty:
 
         function completeStop() {{
             if (curIdx < stops.length - 1) {{
-                const s = stops[curIdx];
-                s.status = "completed";
-
-                // 1. Dynamic Departure Snap on Stop #1 (e.g. 6:30 AM vs planned 8:00 AM)
-                let isFirstInspection = (curIdx === 1 || (curIdx === 0 && !s.is_depot));
-                if (isFirstInspection && s.planned_arrival && s.planned_arrival !== "--:--") {{
-                    try {{
-                        let match = s.planned_arrival.match(/(\d+):(\d+)\s*(AM|PM)/i);
-                        if (match) {{
-                            let pDate = new Date();
-                            let pHours = parseInt(match[1], 10);
-                            let pMins = parseInt(match[2], 10);
-                            let pAmpm = match[3].toUpperCase();
-                            if (pAmpm === "PM" && pHours < 12) pHours += 12;
-                            if (pAmpm === "AM" && pHours === 12) pHours = 0;
-                            pDate.setHours(pHours, pMins, 0, 0);
-
-                            let startDeltaMinutes = (pDate.getTime() - Date.now()) / 60000.0;
-                            if (startDeltaMinutes > 10.0) {{
-                                bankedMinutes += startDeltaMinutes;
-                            }}
-                        }}
-                    }} catch(e) {{}}
-                }}
-
-                // 2. Normal On-Site Dwell Absorption (5-minute allocation)
-                if (s.arrived_at && !s.is_depot) {{
-                    let elapsedMin = (Date.now() - s.arrived_at) / 60000.0;
-                    let delta = 5.0 - elapsedMin;
-                    bankedMinutes += delta;
-                }}
-
+                stops[curIdx].status = "completed";
                 curIdx++;
                 updateDeck();
-                showToast("✅ Stop Completed (" + (bankedMinutes >= 0 ? "+" : "") + Math.round(bankedMinutes) + "m banked)");
+                showToast("✅ Stop Completed!");
             }}
         }}
 
@@ -1580,8 +1515,7 @@ if not master_df.empty:
                 lon: lon,
                 is_depot: false,
                 is_finish_leg: false,
-                status: "pending",
-                arrived_at: null
+                status: "pending"
             }};
 
             const lastIdx = stops.length - 1;
@@ -1593,7 +1527,7 @@ if not master_df.empty:
 
             closeAddModal();
             updateDeck();
-            showToast("➕ Stop Added Before Base!");
+            showToast("➕ Stop Added!");
         }}
 
         function openTimetableModal() {{
@@ -1604,15 +1538,19 @@ if not master_df.empty:
                 return st.status !== "deleted";
             }});
 
-            let dynamicFinish = applyDeltaToTimeString(baselineFinishStr, bankedMinutes);
+            let cumulativeMins = 0;
             let activeRemainingCount = remainingStops.filter(function(st) {{ return !st.is_depot; }}).length;
-            document.getElementById("modal-route-summary").innerText = 
-                "Finish: " + dynamicFinish + " · " + activeRemainingCount + " stops left";
 
             remainingStops.forEach(function(s, offset) {{
                 let actualIndex = curIdx + offset;
                 let isCurrent = (offset === 0);
-                let adjustedArrival = applyDeltaToTimeString(s.planned_arrival, bankedMinutes);
+                
+                let legMin = Math.max(2, Math.round(parseFloat(s.leg_miles || 0.0) * 2.5));
+                cumulativeMins += legMin;
+                if (!s.is_depot) cumulativeMins += 5;
+
+                let stopEst = new Date(Date.now() + (cumulativeMins * 60000));
+                let arrivalStr = formatClock(stopEst);
 
                 let item = document.createElement("div");
                 item.style.backgroundColor = isCurrent ? "#1e293b" : "#0f172a";
@@ -1629,7 +1567,7 @@ if not master_df.empty:
                 item.innerHTML = `
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
                         <span style="font-size: 0.72rem; font-weight: 800; color: ${{isCurrent ? '#38bdf8' : '#94a3b8'}};">${{badgeLabel}} ${{isCurrent ? '• ACTIVE' : ''}}</span>
-                        <span style="font-size: 0.85rem; font-weight: 800; color: #fbbf24;">${{adjustedArrival}}</span>
+                        <span style="font-size: 0.85rem; font-weight: 800; color: #fbbf24;">${{arrivalStr}}</span>
                     </div>
                     <div style="font-size: 0.95rem; font-weight: 700; color: #f1f5f9; text-transform: uppercase;">${{s.street || 'Property Address'}}</div>
                     <div style="font-size: 0.78rem; color: #94a3b8;">${{[s.city, s.state, s.zip].filter(Boolean).join(", ")}}</div>
@@ -1645,6 +1583,7 @@ if not master_df.empty:
                 listContainer.appendChild(item);
             }});
 
+            document.getElementById("modal-route-summary").innerText = activeRemainingCount + " stops remaining";
             document.getElementById("timetable-modal").style.display = "block";
         }}
 
@@ -1654,10 +1593,10 @@ if not master_df.empty:
 
         function executeSyncOnly() {{
             closeReoptMenu();
-            showToast("⚡ Updating route telemetry from GPS...");
+            showToast("⚡ Updating remaining mileage from GPS...");
 
             if (!liveCoords || !liveCoords.lat) {{
-                showToast("Preserving schedule (No GPS lock)");
+                showToast("Using planned distances (Waiting for GPS lock)");
                 return;
             }}
 
@@ -1676,7 +1615,7 @@ if not master_df.empty:
                             let legMeters = data.routes[0].legs[0].distance;
                             stops[curIdx].leg_miles = Math.round((legMeters * 0.000621371) * 10) / 10;
                             updateDeck();
-                            showToast("⚡ Telemetry Synced!");
+                            showToast("⚡ Mileage Synced!");
                         }}
                     }})
                     .catch(e => updateDeck());
