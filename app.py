@@ -144,7 +144,7 @@ def geocode_single_nominatim(address, cache):
     if arc_coords:
         return arc_coords
 
-    geolocator = Nominatim(user_agent="cfs_field_geocoder_us_v44")
+    geolocator = Nominatim(user_agent="cfs_field_geocoder_us_v45")
     try:
         clean_addr = strip_unit_designation(address)
         location = geolocator.geocode(
@@ -453,93 +453,107 @@ def export_printable_run_sheet_html(sched_df, inspector_name, depot_addr, route_
 <style>
     @page {{
         size: letter portrait;
-        margin: 0.4in;
+        margin: 0.5in 0.6in;
     }}
     body {{
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
         color: #111;
         margin: 0;
         padding: 0;
-        font-size: 9pt;
-        line-height: 1.25;
+        font-size: 10pt;
+        line-height: 1.3;
+    }}
+    .sheet-wrapper {{
+        max-width: 6.8in;
+        margin: 0 auto;
     }}
     .tax-header {{
         border-bottom: 2px solid #000;
-        padding-bottom: 4px;
-        margin-bottom: 8px;
+        padding-bottom: 6px;
+        margin-bottom: 12px;
     }}
     .tax-title {{
-        font-size: 13pt;
+        font-size: 14pt;
         font-weight: 800;
         text-transform: uppercase;
         letter-spacing: 0.5px;
-        margin: 0 0 2px 0;
+        margin: 0 0 4px 0;
     }}
     .meta-grid {{
         display: flex;
         justify-content: space-between;
-        font-size: 8.5pt;
+        font-size: 9pt;
         font-weight: 600;
-        margin-top: 2px;
+        margin-top: 3px;
     }}
     .summary-badge {{
-        font-size: 9.5pt;
+        font-size: 10pt;
         font-weight: 800;
         background: #eee;
-        padding: 2px 6px;
+        padding: 2px 8px;
         border-radius: 4px;
     }}
-    .stop-row {{
-        padding: 4px 0;
-        border-bottom: 1px solid #e5e7eb;
-        display: flex;
-        align-items: center;
+    .stop-table {{
+        width: 100%;
+        border-collapse: collapse;
+        table-layout: fixed;
+    }}
+    .stop-table tr {{
+        border-bottom: 1px solid #e2e8f0;
         page-break-inside: avoid;
     }}
-    .checkbox-box {{
-        font-family: "Courier New", Courier, monospace;
-        font-size: 10pt;
-        font-weight: bold;
-        width: 28px;
-        flex-shrink: 0;
-        white-space: nowrap;
+    .stop-table td {{
+        padding: 5px 3px;
+        vertical-align: middle;
     }}
-    .stop-num {{
+    .col-check {{
+        width: 24px;
+        text-align: center;
+    }}
+    .check-box {{
+        width: 13px;
+        height: 13px;
+        border: 1.5px solid #222;
+        border-radius: 2px;
+        display: inline-block;
+    }}
+    .col-num {{
+        width: 26px;
         font-weight: 800;
-        width: 60px;
-        flex-shrink: 0;
+        color: #111;
+        text-align: right;
+        padding-right: 6px !important;
     }}
-    .stop-main {{
-        flex-grow: 1;
-        padding-right: 12px;
+    .col-main {{
+        width: auto;
+        padding-right: 14px !important;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
     }}
-    .stop-id {{
+    .col-id {{
         font-weight: 700;
         color: #000;
     }}
-    .stop-addr {{
-        color: #222;
-    }}
-    .stop-time {{
-        width: 75px;
+    .col-time {{
+        width: 78px;
         text-align: right;
         font-weight: 700;
-        flex-shrink: 0;
+        color: #000;
+        white-space: nowrap;
+        padding-right: 10px !important;
     }}
-    .stop-miles {{
-        width: 65px;
+    .col-miles {{
+        width: 66px;
         text-align: right;
         font-weight: 600;
-        color: #444;
-        flex-shrink: 0;
+        color: #4b5563;
+        white-space: nowrap;
     }}
     .footer-note {{
-        margin-top: 12px;
-        font-size: 7.5pt;
-        color: #666;
+        margin-top: 14px;
+        font-size: 8pt;
+        color: #6b7280;
         border-top: 1px solid #ccc;
         padding-top: 4px;
         text-align: center;
@@ -551,46 +565,47 @@ def export_printable_run_sheet_html(sched_df, inspector_name, depot_addr, route_
 </head>
 <body>
 
-<div class="no-print" style="background:#fef3c7; border:1px solid #f59e0b; padding:8px 12px; margin-bottom:12px; border-radius:6px; display:flex; justify-content:space-between; align-items:center;">
-    <span>📄 <strong>Print-Ready Run Sheet:</strong> Formatted for standard 8.5" x 11" paper & tax records.</span>
-    <button onclick="window.print()" style="background:#0284c7; color:#fff; font-weight:bold; padding:6px 14px; border:none; border-radius:5px; cursor:pointer;">🖨️ Print Document</button>
-</div>
-
-<div class="tax-header">
-    <div class="tax-title">Carlson Field Services — Daily Inspection Run Sheet</div>
-    <div class="meta-grid">
-        <div><strong>Inspector:</strong> {inspector_name} | <strong>Date:</strong> {route_date_str}</div>
-        <div><strong>Base:</strong> {depot_addr}</div>
+<div class="sheet-wrapper">
+    <div class="no-print" style="background:#fef3c7; border:1px solid #f59e0b; padding:8px 14px; margin-bottom:14px; border-radius:6px; display:flex; justify-content:space-between; align-items:center;">
+        <span>📄 <strong>Print-Ready Run Sheet:</strong> Formatted for standard 8.5" x 11" paper & tax records.</span>
+        <button onclick="window.print()" style="background:#0284c7; color:#fff; font-weight:bold; padding:6px 14px; border:none; border-radius:5px; cursor:pointer;">🖨️ Print Document</button>
     </div>
-    <div class="meta-grid" style="margin-top: 4px;">
-        <div><strong>Active Stops:</strong> {len(stops)} properties</div>
-        <div><strong>Planned Span:</strong> {start_time_str} – {end_time_str}</div>
-        <div class="summary-badge">Total Route: {total_miles:.1f} Miles</div>
-    </div>
-</div>
 
-<div class="stop-list">
+    <div class="tax-header">
+        <div class="tax-title">Carlson Field Services — Daily Inspection Run Sheet</div>
+        <div class="meta-grid">
+            <div><strong>Inspector:</strong> {inspector_name} &nbsp;|&nbsp; <strong>Date:</strong> {route_date_str}</div>
+            <div><strong>Base:</strong> {depot_addr}</div>
+        </div>
+        <div class="meta-grid" style="margin-top: 4px;">
+            <div><strong>Active Stops:</strong> {len(stops)} properties</div>
+            <div><strong>Planned Span:</strong> {start_time_str} – {end_time_str}</div>
+            <div class="summary-badge">Total Route: {total_miles:.1f} Miles</div>
+        </div>
+    </div>
+
+    <table class="stop-table">
 """
 
     for s in stops:
         html += f"""
-    <div class="stop-row">
-        <div class="checkbox-box">[ &nbsp; ]</div>
-        <div class="stop-num">Stop #{s['stop_num']}</div>
-        <div class="stop-main">
-            <span class="stop-id">ID: {s['id']}</span> &mdash; 
-            <span class="stop-addr">{s['address']}</span>
-        </div>
-        <div class="stop-time">{s['arrival']}</div>
-        <div class="stop-miles">{s['total_miles']:.1f} mi</div>
-    </div>
+        <tr>
+            <td class="col-check"><span class="check-box"></span></td>
+            <td class="col-num">{s['stop_num']}.</td>
+            <td class="col-main">
+                <span class="col-id">ID: {s['id']}</span> &mdash; <span>{s['address']}</span>
+            </td>
+            <td class="col-time">{s['arrival']}</td>
+            <td class="col-miles">{s['total_miles']:.1f} mi</td>
+        </tr>
 """
 
     html += f"""
-</div>
+    </table>
 
-<div class="footer-note">
-    Official Carlson Field Services daily mileage & route log for tax year {datetime.now().year}. Generated {datetime.now().strftime('%B %d, %Y at %I:%M %p')}.
+    <div class="footer-note">
+        Official Carlson Field Services daily mileage & route log for tax year {datetime.now().year}. Generated {datetime.now().strftime('%B %d, %Y at %I:%M %p')}.
+    </div>
 </div>
 
 </body>
@@ -686,7 +701,7 @@ def persist_stops(df):
 def search_address(query):
     if not query or len(query.strip()) < 3:
         return []
-    geolocator = Nominatim(user_agent="cfs_field_geocoder_us_v44")
+    geolocator = Nominatim(user_agent="cfs_field_geocoder_us_v45")
     try:
         locations = geolocator.geocode(
             query,
@@ -1058,7 +1073,7 @@ if not master_df.empty:
                         use_container_width=True,
                         height=420
                     )
-                    if st.form_submit_button("🗑️️ Remove Checked Stops", type="secondary", use_container_width=True):
+                    if st.form_submit_button("🗑️ Remove Checked Stops", type="secondary", use_container_width=True):
                         kept_df = edited_prune[edited_prune["Drop?"] == False]
                         valid_master_df = valid_master_df[valid_master_df["Inspection ID"].isin(kept_df["ID"])].reset_index(drop=True)
                         persist_stops(valid_master_df)
@@ -1127,7 +1142,6 @@ if not master_df.empty:
                     st.rerun()
 
             with exp_col2:
-                # Printable Field Sheet (Clean format, no spreadsheet lines)
                 printable_sheet_html = export_printable_run_sheet_html(
                     sched_df, 
                     inspector_profile, 
