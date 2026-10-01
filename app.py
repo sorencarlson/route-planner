@@ -107,7 +107,7 @@ def geocode_arcgis(address, cache):
         return cache[address]
     try:
         clean_addr = strip_unit_designation(address)
-        if not re.search(r"(?i)\b(VA|MD|DC|USA|Virginia|Maryland)\b", clean_addr):
+        if not re.search(r"(?i)\b(VA|MD|DC|USA|Virginia|Maryland|WV|West Virginia)\b", clean_addr):
             clean_addr = f"{clean_addr}, USA"
 
         encoded_query = urllib.parse.quote(clean_addr)
@@ -144,13 +144,13 @@ def geocode_single_nominatim(address, cache):
     if arc_coords:
         return arc_coords
 
-    geolocator = Nominatim(user_agent="cfs_field_geocoder_us_v39")
+    geolocator = Nominatim(user_agent="cfs_field_geocoder_us_v40")
     try:
         clean_addr = strip_unit_designation(address)
         location = geolocator.geocode(
             clean_addr,
             country_codes="us",
-            viewbox=[(-83.7, 36.5), (-75.0, 40.0)],
+            viewbox=[(-83.7, 36.5), (-75.0, 40.5)],
             bounded=False,
             timeout=6,
         )
@@ -363,8 +363,8 @@ def calculate_schedule(coords, routes, dist_matrix, dur_matrix, start_time_obj, 
                 driver_schedule.append(
                     {
                         "Stop Number": 1,
-                        "Inspection ID": "",
-                        "Description": f"Start: {full_addr}",
+                        "Inspection ID": "BASE",
+                        "Address": full_addr,
                         "Arrival": current_time.strftime("%I:%M %p"),
                         "Departure": current_time.strftime("%I:%M %p"),
                         "Total Miles": 0.0,
@@ -394,8 +394,8 @@ def calculate_schedule(coords, routes, dist_matrix, dur_matrix, start_time_obj, 
                     driver_schedule.append(
                         {
                             "Stop Number": stop_idx + 1,
-                            "Inspection ID": "",
-                            "Description": f"End: {full_addr}",
+                            "Inspection ID": "BASE RETURN",
+                            "Address": full_addr,
                             "Arrival": arrival_str,
                             "Departure": "---",
                             "Total Miles": round(running_miles, 2),
@@ -411,7 +411,7 @@ def calculate_schedule(coords, routes, dist_matrix, dur_matrix, start_time_obj, 
                         {
                             "Stop Number": stop_idx + 1,
                             "Inspection ID": inspection_id,
-                            "Description": full_addr,
+                            "Address": full_addr,
                             "Arrival": arrival_str,
                             "Departure": departure_str,
                             "Total Miles": round(running_miles, 2),
@@ -435,12 +435,12 @@ def export_waypoints_gpx(sched_df):
     for _, row in sched_df.iterrows():
         try:
             insp_id = str(row["Inspection ID"]).strip()
-            if not insp_id or insp_id.lower() in ["depot", "nan"] or insp_id in seen_ids:
+            if not insp_id or insp_id.lower() in ["base", "base return", "depot", "nan"] or insp_id in seen_ids:
                 continue
             seen_ids.add(insp_id)
             lat = float(row["Latitude"])
             lon = float(row["Longitude"])
-            desc = str(row["Description"]).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            desc = str(row["Address"]).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             gpx_xml.append(f'    <rtept lat="{lat}" lon="{lon}">')
             gpx_xml.append(f"      <name>{insp_id}</name>")
             gpx_xml.append(f"      <desc>{desc}</desc>")
@@ -460,7 +460,7 @@ def export_directions_txt(sched_df):
     ]
     for _, row in sched_df.iterrows():
         insp_str = f" [ID: {row['Inspection ID']}]" if row["Inspection ID"] else ""
-        lines.append(f"Stop {row['Stop Number']}{insp_str}: {row['Description']}")
+        lines.append(f"Stop {row['Stop Number']}{insp_str}: {row['Address']}")
         lines.append(f"  Arrival: {row['Arrival']}  |  Departure: {row['Departure']}")
         lines.append(f"  Total Distance: {row['Total Miles']} miles")
         lines.append("-" * 40)
@@ -511,12 +511,12 @@ def persist_stops(df):
 def search_address(query):
     if not query or len(query.strip()) < 3:
         return []
-    geolocator = Nominatim(user_agent="cfs_field_geocoder_us_v39")
+    geolocator = Nominatim(user_agent="cfs_field_geocoder_us_v40")
     try:
         locations = geolocator.geocode(
             query,
             country_codes="us",
-            viewbox=[(-83.7, 36.5), (-75.0, 40.0)],
+            viewbox=[(-83.7, 36.5), (-75.0, 40.5)],
             bounded=False,
             exactly_one=False,
             limit=6,
@@ -537,7 +537,7 @@ view_mode = st.sidebar.radio(
 )
 
 st.sidebar.markdown("---")
-st.sidebar.header("⚙️ Route Settings")
+st.sidebar.header("⚙️️ Route Settings")
 
 start_input = st.sidebar.text_input("Starting Address / Base:", "2644 S Shirlington Rd, Arlington, VA")
 start_suggestions = search_address(start_input)
@@ -547,7 +547,7 @@ depot_address = (
     else start_input
 )
 
-start_time = st.sidebar.time_input("Route Start Time:", value=time(8, 0))
+start_time = st.sidebar.time_input("Route Start Time:", value=time(6, 30))
 stop_duration = st.sidebar.number_input(
     "Inspection Time per Stop (mins):", min_value=1, max_value=120, value=5
 )
@@ -580,7 +580,7 @@ if inspector_saved_files:
                         and str(addr).lower() != "nan"
                         and not str(addr).startswith("Start:")
                         and not str(addr).startswith("End:")
-                        and str(insp_id).lower() not in ["depot", "start/end depot", "nan", ""]
+                        and str(insp_id).lower() not in ["depot", "start/end depot", "base", "base return", "nan", ""]
                     ):
                         recalled_rows.append({"Inspection ID": insp_id, "Address": addr})
 
@@ -736,7 +736,7 @@ if not master_df.empty:
     if not valid_master_df.empty and len(coords) > 1:
         dist_matrix, dur_matrix = build_road_distance_matrix_cached(coords)
 
-        # Desktop Optimization Form
+        # ----------------- DESKTOP OPTIMIZER -----------------
         st.markdown(f"### ⚡ Route Direction & Optimization ({inspector_profile})")
         stop_options = ["-- Auto-Pick Closest Stop --"] + [
             f"#{i+1}: {r['Inspection ID']} ({str(r['Address'])[:22]}...)"
@@ -809,80 +809,118 @@ if not master_df.empty:
         # VIEW 1: DESKTOP PLANNER
         # =========================================================================
         if view_mode == "🖥️ Desktop Planner":
-            col_list, col_map = st.columns([1, 2], gap="small")
-
-            with col_list:
-                st.markdown(f"### 📋 Manage Stops ({len(valid_master_df)} Active)")
-                table_rows = []
-                for i, r in valid_master_df.iterrows():
-                    table_rows.append(
-                        {
-                            "Drop?": False,
-                            "Stop #": int(i + 1),
-                            "Inspection ID": str(r["Inspection ID"]),
-                            "Address": str(r["Address"]),
-                        }
-                    )
-                edit_table = pd.DataFrame(table_rows)
-
-                with st.form("bulk_reorder_and_prune_form", clear_on_submit=False):
-                    edited_df = st.data_editor(
-                        edit_table,
-                        column_config={
-                            "Drop?": st.column_config.CheckboxColumn("Drop?", default=False),
-                            "Stop #": st.column_config.NumberColumn(
-                                "Stop #",
-                                min_value=1,
-                                max_value=len(table_rows) + 50,
-                                step=1,
-                                width="small",
-                                help="Change numbers directly to rearrange stops",
-                            ),
-                            "Inspection ID": st.column_config.TextColumn("ID", width="medium"),
-                            "Address": st.column_config.TextColumn("Address", width="medium"),
-                        },
-                        disabled=["Inspection ID", "Address"],
-                        hide_index=True,
-                        use_container_width=True,
-                        height=650,
-                    )
-
-                    submit_changes = st.form_submit_button(
-                        "💾 Apply Sequence & Reorder Changes",
-                        type="primary",
-                        use_container_width=True,
-                    )
-
-                    if submit_changes:
-                        kept_df = edited_df[edited_df["Drop?"] == False].copy()
-                        kept_df["Stop #"] = pd.to_numeric(kept_df["Stop #"], errors="coerce").fillna(9999)
-                        kept_df = kept_df.sort_values(by=["Stop #"]).reset_index(drop=True)
-
-                        order_map = {row["Inspection ID"]: idx for idx, row in kept_df.iterrows()}
-                        valid_master_df = valid_master_df[valid_master_df["Inspection ID"].isin(order_map.keys())].copy()
-                        valid_master_df["_sort_key"] = valid_master_df["Inspection ID"].map(order_map)
-                        valid_master_df = valid_master_df.sort_values(by=["_sort_key"]).drop(columns=["_sort_key"]).reset_index(drop=True)
-
-                        persist_stops(valid_master_df)
-                        st.toast("Updated sequence & removed selected stops!", icon="💾")
-                        st.rerun()
-
-            with col_map:
-                st.markdown(f"### 🗺️ Live Route Map ({inspector_profile})")
-                if os.path.exists("route_map.html"):
-                    with open("route_map.html", "r", encoding="utf-8") as f:
-                        components.html(f.read(), height=750)
-
-            st.markdown("---")
+            # 1. Summary Metrics Bar
             final_row = sched_df.iloc[-1]
             first_row = sched_df.iloc[0]
             col_m1, col_m2, col_m3, col_m4 = st.columns(4)
             col_m1.metric("🚗 Total Mileage", f"{final_row['Total Miles']:.1f} mi")
-            col_m2.metric("⏱️ Total Planned Span", f"{first_row['Arrival']} - {final_row['Arrival']}")
-            col_m3.metric("📍 Active Stops", f"{max(0, len(sched_df) - 2)}")
+            col_m2.metric("⏱️ Planned Day Span", f"{first_row['Arrival']} - {final_row['Arrival']}")
+            col_m3.metric("📍 Active Inspections", f"{len(valid_master_df)}")
             col_m4.metric("🏁 Target Office Return", final_row["Arrival"])
 
-            # ----------------- SAVE ROUTE & EXPORTS -----------------
+            st.markdown("---")
+
+            # 2. Reordering & Managing Stops
+            st.markdown(f"### 📋 Manage Route Sequence & Reorder ({len(valid_master_df)} Active)")
+            
+            with st.expander("🔀 Move Individual Stop Position", expanded=True):
+                move_col1, move_col2, move_col3 = st.columns([5, 3, 2], gap="small")
+                
+                stop_choices = [
+                    f"#{i+1}: {r['Inspection ID']} ({str(r['Address'])[:30]}...)"
+                    for i, r in valid_master_df.iterrows()
+                ]
+                selected_move_stop = move_col1.selectbox("Select Stop to Move:", stop_choices)
+                
+                target_positions = list(range(1, len(valid_master_df) + 1))
+                current_move_idx = int(re.match(r"#(\d+):", selected_move_stop).group(1)) if selected_move_stop else 1
+                target_pos = move_col2.selectbox(
+                    "Move to Position #:", 
+                    target_positions, 
+                    index=min(current_move_idx, len(target_positions) - 1)
+                )
+
+                move_col3.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+                if move_col3.button("🔀 Shift Stop", type="primary", use_container_width=True):
+                    src_idx = current_move_idx - 1
+                    dest_idx = target_pos - 1
+                    if src_idx != dest_idx:
+                        row_to_move = valid_master_df.iloc[src_idx:src_idx+1]
+                        remaining_rows = valid_master_df.drop(index=src_idx).reset_index(drop=True)
+                        
+                        top = remaining_rows.iloc[:dest_idx]
+                        bottom = remaining_rows.iloc[dest_idx:]
+                        valid_master_df = pd.concat([top, row_to_move, bottom]).reset_index(drop=True)
+                        persist_stops(valid_master_df)
+                        st.toast(f"Moved Stop #{current_move_idx} to Position #{target_pos}!", icon="🔀")
+                        st.rerun()
+
+            # 3. Map & Stops Quick Prune
+            col_stops_admin, col_map_disp = st.columns([1, 1], gap="medium")
+            
+            with col_stops_admin:
+                st.markdown("#### 🗑️ Drop Unwanted Stops")
+                prune_data = []
+                for i, r in valid_master_df.iterrows():
+                    prune_data.append({
+                        "Drop?": False,
+                        "Stop #": int(i + 1),
+                        "ID": str(r["Inspection ID"]),
+                        "Address": str(r["Address"])
+                    })
+                prune_df = pd.DataFrame(prune_data)
+
+                with st.form("drop_stops_form"):
+                    edited_prune = st.data_editor(
+                        prune_df,
+                        column_config={
+                            "Drop?": st.column_config.CheckboxColumn("Drop?", default=False),
+                            "Stop #": st.column_config.NumberColumn("Stop", width="small", disabled=True),
+                            "ID": st.column_config.TextColumn("ID", width="medium", disabled=True),
+                            "Address": st.column_config.TextColumn("Address", width="large", disabled=True),
+                        },
+                        hide_index=True,
+                        use_container_width=True,
+                        height=420
+                    )
+                    if st.form_submit_button("🗑️ Remove Checked Stops", type="secondary", use_container_width=True):
+                        kept_df = edited_prune[edited_prune["Drop?"] == False]
+                        valid_master_df = valid_master_df[valid_master_df["Inspection ID"].isin(kept_df["ID"])].reset_index(drop=True)
+                        persist_stops(valid_master_df)
+                        st.toast("Removed selected stops!", icon="🗑️")
+                        st.rerun()
+
+            with col_map_disp:
+                st.markdown("#### 🗺️ Live Route Map")
+                if os.path.exists("route_map.html"):
+                    with open("route_map.html", "r", encoding="utf-8") as f:
+                        components.html(f.read(), height=480)
+
+            # 4. FULL ON-SCREEN TIMETABLE (NO EXPORT REQUIRED)
+            st.markdown("---")
+            st.markdown("### 🕒 Complete Route Timetable")
+            
+            display_sched = sched_df[[
+                "Stop Number", "Inspection ID", "Address", "Arrival", "Departure", "Leg Miles", "Total Miles"
+            ]].copy()
+            
+            st.dataframe(
+                display_sched,
+                column_config={
+                    "Stop Number": st.column_config.NumberColumn("Stop #", width="small"),
+                    "Inspection ID": st.column_config.TextColumn("ID", width="medium"),
+                    "Address": st.column_config.TextColumn("Address", width="large"),
+                    "Arrival": st.column_config.TextColumn("Arrival Time", width="medium"),
+                    "Departure": st.column_config.TextColumn("Departure Time", width="medium"),
+                    "Leg Miles": st.column_config.NumberColumn("Leg (mi)", format="%.1f", width="small"),
+                    "Total Miles": st.column_config.NumberColumn("Cum (mi)", format="%.1f", width="small"),
+                },
+                hide_index=True,
+                use_container_width=True,
+                height=450
+            )
+
+            # 5. Save & Export Controls
             st.markdown("---")
             st.subheader(f"💾 Save Route & Export Data ({inspector_profile})")
             exp_col1, exp_col2, exp_col3, exp_col4 = st.columns(4)
@@ -943,7 +981,7 @@ if not master_df.empty:
             stops_payload = []
             for idx, row in sched_df.iterrows():
                 insp_id = str(row.get("Inspection ID", "")).strip()
-                desc = str(row.get("Description", "")).strip()
+                desc = str(row.get("Address", "")).strip()
                 raw_addr = desc.replace("Start: ", "").replace("End: ", "").strip()
 
                 parts = [p.strip() for p in raw_addr.split(",") if p.strip()]
@@ -970,7 +1008,6 @@ if not master_df.empty:
                 is_depot = idx == 0 or idx == len(sched_df) - 1
                 is_finish = idx == len(sched_df) - 1
 
-                # Clean Work Order (Strips repeated address if merged)
                 clean_order_val = insp_id
                 if "/" in clean_order_val:
                     clean_order_val = clean_order_val.split("/")[-1].strip()
@@ -1347,30 +1384,25 @@ if not master_df.empty:
 
             const s = stops[curIdx];
 
-            // 1. Completed vs Left counts
             let completedCount = stops.filter(function(st) {{ return !st.is_depot && st.status === "completed"; }}).length;
             let inspsLeft = stops.slice(curIdx).filter(function(st) {{ return !st.is_depot && st.status === "pending"; }}).length;
 
             document.getElementById("hud-done").innerText = completedCount;
             document.getElementById("hud-left").innerText = inspsLeft;
 
-            // 2. Exact Countdown "Miles to Go" (remaining driving legs + return to base leg)
             let remainingMiles = 0.0;
             let totalRemainingDrivingMinutes = 0;
             for (let i = curIdx; i < stops.length; i++) {{
                 let m = parseFloat(stops[i].leg_miles || 0.0);
                 remainingMiles += m;
-                // Realistic DMV driving pace: ~2.5 mins per mile
                 totalRemainingDrivingMinutes += Math.max(2, Math.round(m * 2.5));
             }}
             document.getElementById("hud-miles-left").innerText = Math.round(remainingMiles) + " mi";
 
-            // 3. Direct Anchor Base ETA: Current Time + Remaining Drive Time + 5 mins per remaining property
             let totalRemainingMinutes = totalRemainingDrivingMinutes + (inspsLeft * 5);
             let finishDate = new Date(Date.now() + (totalRemainingMinutes * 60000));
             document.getElementById("hud-finish").innerText = formatClock(finishDate);
 
-            // 4. Update Current Card Information
             if (s.is_depot) {{
                 document.getElementById("disp-badge").className = "card-badge badge-depot";
                 document.getElementById("disp-badge").innerText = s.is_finish_leg ? "🏁 RETURN TO BASE" : "DEPARTURE BASE";
@@ -1387,16 +1419,13 @@ if not master_df.empty:
             document.getElementById("disp-city").innerText = cityLine ? ("📍 " + cityLine) : "📍";
             document.getElementById("disp-order").innerText = s.order_num || "N/A";
             
-            // Estimated Arrival for current stop: now + current leg driving time
             let legMinutes = Math.max(2, Math.round(parseFloat(s.leg_miles || 0.0) * 2.5));
             let stopArrivalDate = new Date(Date.now() + (legMinutes * 60000));
             document.getElementById("disp-planned-arrival").innerText = formatClock(stopArrivalDate);
 
-            // Google Maps Nav Link
             let verifiedAddress = [s.street, s.city, s.state, s.zip].filter(Boolean).join(", ");
             document.getElementById("nav-link").href = "https://www.google.com/maps/dir/?api=1&destination=" + encodeURIComponent(verifiedAddress) + "&travelmode=driving";
 
-            // Next button labeling
             const btnNext = document.getElementById("btn-next-action");
             if (curIdx === stops.length - 2 && stops[stops.length - 1].is_depot) {{
                 btnNext.innerText = "Finish & Return to Base 🏁";
