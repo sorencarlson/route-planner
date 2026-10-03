@@ -1799,18 +1799,17 @@ if not master_df.empty:
             // Direct Countdown Mileage & Honest Time Math
             let remainingMiles = 0.0;
             let totalRemainingDrivingMinutes = 0;
-           for (let i = curIdx; i < stops.length; i++) {
+            for (let i = curIdx; i < stops.length; i++) {{
             let m = parseFloat(stops[i].leg_miles || 0.0);
             remainingMiles += m;
-            if (m > 25) {
+            if (m > 25) {{
                 totalRemainingDrivingMinutes += Math.round(m * 0.97);
-            } else if (m > 10) {
+            }} else if (m > 10) {{
                 totalRemainingDrivingMinutes += Math.round(m * 1.33);
-            } else {
+            }} else {{
                 totalRemainingDrivingMinutes += Math.max(2, Math.round(m * 1.88));
-            }
-        }
-            document.getElementById("hud-miles-left").innerText = Math.round(remainingMiles) + " mi";
+            }}
+        }}
 
             let totalRemainingMinutes = totalRemainingDrivingMinutes + (inspsLeft * 5);
             let finishDate = new Date(Date.now() + (totalRemainingMinutes * 60000));
